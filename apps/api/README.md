@@ -681,15 +681,16 @@ default). Behind a proxy, also set uvicorn's `FORWARDED_ALLOW_IPS`.
 
 ## 🤖 CI
 
-`.github/workflows/ci.yml` (at the root of the monorepo; its steps run in `apps/api`) runs on pushes to `main`, on pull requests, weekly and on demand:
+`.github/workflows/ci.yml` (at the root of the monorepo; its steps run in `apps/api`) runs on pushes to `main`, on pull requests, weekly and on demand. The `affected` job asks Nx which apps the change touches, so a change that only touches `apps/studio` skips the jobs below that start with `API`; the weekly and manual runs test everything. The API jobs:
 
-- `check` — `make check` and a coverage summary
-- `audit` — the dependency audit (`make audit`), apart from `check` so a new advisory does not hide the code checks; with `check`, the weekly run
-- `api` — Spectral, oasdiff against `main` and Schemathesis (`make api-check`). Schemathesis fuzzes `tests/schemathesis_app.py`, the real app with a fake parser, started with `uvicorn --factory`, so no model is loaded (it never reaches a 200 under the 415 allowance; `tests/parsing/test_contract.py` checks the 200, 413, 500 and 503 answers against `openapi.json`)
-- `docker` — builds the image, runs it with an empty models folder and expects the documented start-up failure (a non-zero exit and `model_load_failed` in the output), then runs `python -c "import docling.document_converter, torch"` in the image to prove it can import them (without `--read-only`, `--tmpfs` or the models mount, so it does not show a failure that only the read-only container causes), then checks that `compose.yaml` is valid
+- `api-check` (`API check 🐍`) — `make check` and a coverage summary
+- `api-contract` (`API contract 📜`) — Spectral, oasdiff against `main` and Schemathesis (`make api-check`). Schemathesis fuzzes `tests/schemathesis_app.py`, the real app with a fake parser, started with `uvicorn --factory`, so no model is loaded (it never reaches a 200 under the 415 allowance; `tests/parsing/test_contract.py` checks the 200, 413, 500 and 503 answers against `openapi.json`)
+- `api-docker` (`API Docker 🐳`) — builds the image, runs it with an empty models folder and expects the documented start-up failure (a non-zero exit and `model_load_failed` in the output), then runs `python -c "import docling.document_converter, torch"` in the image to prove it can import them (without `--read-only`, `--tmpfs` or the models mount, so it does not show a failure that only the read-only container causes), then checks that `compose.yaml` is valid
+- `audit` (`Audit 🔒`) — the dependency audit (`make audit`, and `npm audit` for the Studio), apart from the checks so a new advisory does not hide them; it runs on every change
+- `check` (`Check ✅`) — the gate: it passes when every job above, and the Studio jobs, passed or were skipped because their app is not affected
 - `free-threaded` — the tests on free-threaded Python; informational, **switched off** (`if: false`) because the locked dependencies have no free-threaded wheels (`av`, `docling-parse`, pyarrow)
 
-None of these workflows has run on GitHub yet: they were written and checked locally only.
+Branch protection requires the two results `Check ✅` and `Audit 🔒`.
 
 Actions are pinned to exact version tags. `.github/dependabot.yml` proposes weekly updates for uv,
 GitHub Actions and the Docker images, grouping minor and patch releases.

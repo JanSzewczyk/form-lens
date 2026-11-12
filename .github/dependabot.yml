@@ -19,6 +19,21 @@ updates:
         patterns: ["*"]
         update-types: [minor, patch]
 
+  # The npm workspace (apps/studio and packages/api-client) is one lock file at the root.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      npm-minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -34,9 +49,11 @@ updates:
         update-types: [minor, patch]
 
   # Bumps the uv image in the Dockerfile only; tests/test_tooling.py fails until UV_VERSION in
-  # ci.yml matches, so update both in the same pull request.
+  # ci.yml and release.yml matches, so update all in the same pull request.
   - package-ecosystem: docker
-    directory: /apps/api
+    directories:
+      - /apps/api
+      - /apps/studio
     schedule:
       interval: weekly
     cooldown:

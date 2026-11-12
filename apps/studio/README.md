@@ -40,3 +40,5 @@ npx nx run-many -p studio api-client -t generate:check type-check biome:ci knip:
 
 Storybook (`storybook:build`, `test:storybook`) and Playwright (`test:e2e:ci`, after `build`) need browsers and
 run separately. The image: `npx nx run studio:docker-build`.
+
+A change to the Studio README only.

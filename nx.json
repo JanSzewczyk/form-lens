@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "namedInputs": {
+    "sharedGlobals": [
+      "{workspaceRoot}/.github/workflows/*.yml",
+      "{workspaceRoot}/.nvmrc",
+      "{workspaceRoot}/nx.json"
+    ],
+    "default": ["{projectRoot}/**/*", "sharedGlobals"]
+  },
+  "targetDefaults": {
+    "check": { "cache": true },
+    "lint": { "cache": true },
+    "type-check": { "cache": true },
+    "test": { "cache": true },
+    "build": { "cache": true }
+  },
+  "analytics": false
+}

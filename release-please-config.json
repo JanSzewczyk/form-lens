@@ -1,0 +1,20 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "f157e00e29069af86393dc52fb01b3f8e02fbdee",
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": false,
+  "include-component-in-tag": true,
+  "separate-pull-requests": false,
+  "packages": {
+    "apps/api": {
+      "release-type": "python",
+      "component": "api",
+      "package-name": "formlens"
+    },
+    "apps/studio": {
+      "release-type": "node",
+      "component": "studio",
+      "package-name": "@form-lens/studio"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+# Applies to builds whose context is the repository root (apps/studio/Dockerfile).
+# apps/api builds from its own folder and has its own .dockerignore.
+*
+!package.json
+!package-lock.json
+!apps/studio
+!packages/api-client
+**/node_modules
+**/.next
+**/storybook-static
+**/coverage
+**/playwright-report
+**/test-results
+**/tmp
+**/.env*
+!**/.env.example

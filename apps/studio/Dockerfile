@@ -1,5 +1,5 @@
 # Build from the repository root: docker build -f apps/studio/Dockerfile -t formlens-studio:local .
-FROM node:24-slim AS deps
+FROM node:26-slim AS deps
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY apps/studio/package.json apps/studio/
@@ -13,7 +13,7 @@ COPY packages/api-client packages/api-client
 ENV NEXT_TELEMETRY_DISABLED=1 SKIP_ENV_VALIDATION=true
 RUN npm run build -w @form-lens/studio
 
-FROM node:24-slim AS runtime
+FROM node:26-slim AS runtime
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000
 WORKDIR /app
 # `standalone` holds server.js and the traced node_modules, laid out as in the repository.

@@ -1,0 +1,6 @@
+# Node and Nx (apps/api keeps its own Python ignores in apps/api/.gitignore)
+node_modules/
+.nx/cache
+.nx/workspace-data
+.nx/polygraph
+.DS_Store

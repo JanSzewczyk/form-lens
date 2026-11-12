@@ -2,9 +2,9 @@
 
 # 🐍 formlens
 
-[![CI](https://img.shields.io/github/actions/workflow/status/JanSzewczyk/form-lens-api/ci.yml?branch=main&logo=githubactions&logoColor=white&label=CI)](https://github.com/JanSzewczyk/form-lens-api/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens-api/main/.python-version&search=(%5Cd%2B%5C.%5Cd%2B)&replace=%241&label=Python&logo=python&logoColor=white)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens-api/main/uv.lock&search=name%20%3D%20%22fastapi%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=FastAPI&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![CI](https://img.shields.io/github/actions/workflow/status/JanSzewczyk/form-lens/ci.yml?branch=main&logo=githubactions&logoColor=white&label=CI)](https://github.com/JanSzewczyk/form-lens/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens/main/apps/api/.python-version&search=(%5Cd%2B%5C.%5Cd%2B)&replace=%241&label=Python&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens/main/apps/api/uv.lock&search=name%20%3D%20%22fastapi%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=FastAPI&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 
 **FastAPI service that extracts structured data from forms with a document model that runs locally**
@@ -30,8 +30,8 @@ runs on Python 3.15 with uv, Ruff, mypy (strict) and pytest.
 ### ⚡ Quick Start
 
 ```bash
-git clone https://github.com/JanSzewczyk/form-lens-api.git
-cd form-lens-api
+git clone https://github.com/JanSzewczyk/form-lens.git
+cd form-lens/apps/api
 cp .env.example .env
 make install
 make download-models   # about 0.6 GB, once; the service does not start without the model
@@ -68,24 +68,24 @@ curl -i -F "template_id=<id from the answer>" -F "file=@invoice.pdf" http://127.
 
 ### 🧱 Tech Stack
 
-- [![FastAPI](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens-api/main/uv.lock&search=name%20%3D%20%22fastapi%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=FastAPI&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/) — routing, validation and the OpenAPI document
-- [![Pydantic](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens-api/main/uv.lock&search=name%20%3D%20%22pydantic%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=Pydantic&logo=pydantic&logoColor=white)](https://docs.pydantic.dev/) — request, response and problem models
-- [![Pydantic Settings](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens-api/main/uv.lock&search=name%20%3D%20%22pydantic-settings%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=Pydantic%20Settings&logo=pydantic&logoColor=white)](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) — typed configuration from the environment and `.env`
-- [![structlog](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens-api/main/uv.lock&search=name%20%3D%20%22structlog%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=structlog)](https://www.structlog.org/) — structured logging on top of the stdlib `logging`
-- [![Uvicorn](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens-api/main/uv.lock&search=name%20%3D%20%22uvicorn%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=Uvicorn)](https://www.uvicorn.org/) — the ASGI server, started by `python -m formlens`
+- [![FastAPI](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens/main/apps/api/uv.lock&search=name%20%3D%20%22fastapi%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=FastAPI&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/) — routing, validation and the OpenAPI document
+- [![Pydantic](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens/main/apps/api/uv.lock&search=name%20%3D%20%22pydantic%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=Pydantic&logo=pydantic&logoColor=white)](https://docs.pydantic.dev/) — request, response and problem models
+- [![Pydantic Settings](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens/main/apps/api/uv.lock&search=name%20%3D%20%22pydantic-settings%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=Pydantic%20Settings&logo=pydantic&logoColor=white)](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) — typed configuration from the environment and `.env`
+- [![structlog](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens/main/apps/api/uv.lock&search=name%20%3D%20%22structlog%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=structlog)](https://www.structlog.org/) — structured logging on top of the stdlib `logging`
+- [![Uvicorn](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens/main/apps/api/uv.lock&search=name%20%3D%20%22uvicorn%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=Uvicorn)](https://www.uvicorn.org/) — the ASGI server, started by `python -m formlens`
 
 - [SQLAlchemy](https://www.sqlalchemy.org/) and [Alembic](https://alembic.sqlalchemy.org/) — the SQLite database and its migrations (`make migrate`); [httpx2](https://pypi.org/project/httpx2/) — the client of the local model; [jsonschema](https://python-jsonschema.readthedocs.io/) — validates what the model returns against the template's schema
 - **Docling with Granite-Docling** — the document model, a runtime dependency (`docling[vlm]`, with `torch` and, on Apple Silicon, `mlx-vlm`); `python-multipart` reads the upload. Their licences are in [docs/licenses.md](docs/licenses.md)
 
 ### 🧪 Quality Gates
 
-- [![Ruff](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens-api/main/uv.lock&search=name%20%3D%20%22ruff%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=Ruff&logo=ruff&logoColor=white)](https://docs.astral.sh/ruff/) — format and lint, with security, async, logging and docstring rules
-- [![mypy](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens-api/main/uv.lock&search=name%20%3D%20%22mypy%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=mypy)](https://mypy.readthedocs.io/) — `strict = true` with the Pydantic plugin and extra error codes, over `src`, `tests` and `scripts`
-- [![import-linter](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens-api/main/uv.lock&search=name%20%3D%20%22import-linter%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=import-linter)](https://import-linter.readthedocs.io/) — eleven contracts: the core is layered, only the entry point imports uvicorn, only the Docling adapter imports Docling, torch, transformers, mlx-vlm or Pillow, only `main` imports that adapter, only the persistence modules import SQLAlchemy and only the migrations Alembic, only the Ollama adapter imports the HTTP client and jsonschema, the extraction domain imports no framework, and `parsing`, `templates` and `extractions` are layered inside
-- [![pytest](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens-api/main/uv.lock&search=name%20%3D%20%22pytest%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=pytest&logo=pytest&logoColor=white)](https://docs.pytest.org/) — strict mode, warnings are errors, random order, 60 s timeout per test
-- [![coverage](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens-api/main/uv.lock&search=name%20%3D%20%22coverage%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=coverage)](https://coverage.readthedocs.io/) — branch coverage of `src` and `scripts`, at least 95%
-- [![Hypothesis](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens-api/main/uv.lock&search=name%20%3D%20%22hypothesis%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=Hypothesis)](https://hypothesis.readthedocs.io/) — property-based tests
-- [![Schemathesis](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens-api/main/uv.lock&search=name%20%3D%20%22schemathesis%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=Schemathesis)](https://schemathesis.readthedocs.io/) — every check and phase against a running server
+- [![Ruff](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens/main/apps/api/uv.lock&search=name%20%3D%20%22ruff%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=Ruff&logo=ruff&logoColor=white)](https://docs.astral.sh/ruff/) — format and lint, with security, async, logging and docstring rules
+- [![mypy](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens/main/apps/api/uv.lock&search=name%20%3D%20%22mypy%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=mypy)](https://mypy.readthedocs.io/) — `strict = true` with the Pydantic plugin and extra error codes, over `src`, `tests` and `scripts`
+- [![import-linter](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens/main/apps/api/uv.lock&search=name%20%3D%20%22import-linter%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=import-linter)](https://import-linter.readthedocs.io/) — eleven contracts: the core is layered, only the entry point imports uvicorn, only the Docling adapter imports Docling, torch, transformers, mlx-vlm or Pillow, only `main` imports that adapter, only the persistence modules import SQLAlchemy and only the migrations Alembic, only the Ollama adapter imports the HTTP client and jsonschema, the extraction domain imports no framework, and `parsing`, `templates` and `extractions` are layered inside
+- [![pytest](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens/main/apps/api/uv.lock&search=name%20%3D%20%22pytest%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=pytest&logo=pytest&logoColor=white)](https://docs.pytest.org/) — strict mode, warnings are errors, random order, 60 s timeout per test
+- [![coverage](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens/main/apps/api/uv.lock&search=name%20%3D%20%22coverage%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=coverage)](https://coverage.readthedocs.io/) — branch coverage of `src` and `scripts`, at least 95%
+- [![Hypothesis](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens/main/apps/api/uv.lock&search=name%20%3D%20%22hypothesis%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=Hypothesis)](https://hypothesis.readthedocs.io/) — property-based tests
+- [![Schemathesis](https://img.shields.io/badge/dynamic/regex?url=https://raw.githubusercontent.com/JanSzewczyk/form-lens/main/apps/api/uv.lock&search=name%20%3D%20%22schemathesis%22%5Cnversion%20%3D%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=Schemathesis)](https://schemathesis.readthedocs.io/) — every check and phase against a running server
 
 ### 🤖 Automation & DevOps
 
@@ -93,7 +93,6 @@ curl -i -F "template_id=<id from the answer>" -F "file=@invoice.pdf" http://127.
 - [![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)](https://www.docker.com/) — multi-stage image, non-root user, `HEALTHCHECK`, and a `compose.yaml` that runs it read-only
 - [![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)](https://docs.github.com/actions) — `make check`, the contract tooling and the image on every pull request
 - [![Dependabot](https://img.shields.io/badge/Dependabot-025E8C?logo=dependabot&logoColor=white)](https://docs.github.com/code-security/dependabot) — weekly updates for uv, Actions and Docker images, after a 7-day cooldown
-- **python-semantic-release** — versions, tags and GitHub Releases from Conventional Commits on `main`
 - **pip-audit** — every locked dependency group, on every pull request and weekly
 
 ### 🧭 Scope & Design Decisions
@@ -149,8 +148,8 @@ curl -i -F "template_id=<id from the answer>" -F "file=@invoice.pdf" http://127.
 #### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/JanSzewczyk/form-lens-api.git
-cd form-lens-api
+git clone https://github.com/JanSzewczyk/form-lens.git
+cd form-lens/apps/api
 ```
 
 #### 2. Install Dependencies
@@ -618,7 +617,7 @@ naming the default `LLM_MODEL` and the prompt version, so the numbers always say
 - **Hardened container** — the image runs as user `10001`, the virtual environment belongs to root, and `compose.yaml` adds a read-only filesystem, no capabilities and `no-new-privileges`
 - **Audited dependencies** — `make audit` runs pip-audit on every locked group, in CI on every pull request and weekly; Dependabot waits 7 days before proposing a new release
 
-Report a vulnerability through [GitHub issues](https://github.com/JanSzewczyk/form-lens-api/issues).
+Report a vulnerability through [GitHub issues](https://github.com/JanSzewczyk/form-lens/issues).
 
 ---
 
@@ -682,7 +681,7 @@ default). Behind a proxy, also set uvicorn's `FORWARDED_ALLOW_IPS`.
 
 ## 🤖 CI
 
-`.github/workflows/ci.yml` runs on pushes to `main`, on pull requests, weekly and on demand:
+`.github/workflows/ci.yml` (at the root of the monorepo; its steps run in `apps/api`) runs on pushes to `main`, on pull requests, weekly and on demand:
 
 - `check` — `make check` and a coverage summary
 - `audit` — the dependency audit (`make audit`), apart from `check` so a new advisory does not hide the code checks; with `check`, the weekly run
@@ -697,20 +696,8 @@ GitHub Actions and the Docker images, grouping minor and patch releases.
 
 ### 🏷️ Releases
 
-`.github/workflows/release.yml` runs python-semantic-release on every push to `main`. It reads the
-Conventional Commits since the last tag: `feat` bumps the minor version, `fix` and `perf` the patch
-version, and `!` or a `BREAKING CHANGE:` footer the major version (while the version is `0.x`, a
-breaking change bumps the minor). Other types release nothing. `main` only takes pull requests, so a
-release has two steps: the workflow opens (and keeps updating) a `chore(release): X.Y.Z` pull request on
-`release/next` that updates `version` in `pyproject.toml`, `uv.lock` and `CHANGELOG.md`; merging it with
-squash or rebase (not a merge commit) makes the next run tag that commit `vX.Y.Z` and create the GitHub
-Release with generated notes. The repository needs *Allow GitHub Actions to create and approve pull
-requests* turned on, and the first tag (the current `version`) must exist before the first release
-pull request. Preview the next version locally with
-`uv run --group release semantic-release --noop version --print`.
-
-
-If `main` is protected, the workflow's token must be allowed to push to it (a ruleset bypass).
+Releases of the service are made from the root of the monorepo, together with the other apps, and the
+tag is `api-vX.Y.Z`. Until that workflow lands, nothing in this folder releases anything.
 
 ---
 
@@ -759,7 +746,7 @@ models/              downloaded models (git-ignored)
 - **`openapi.json`** — the generated contract
 - **`.spectral.yaml`**, **`schemathesis.toml`** — rules for the contract tooling
 - **`Dockerfile`**, **`compose.yaml`**, **`.dockerignore`** — the image and how to run it
-- **`.github/workflows/ci.yml`**, **`.github/workflows/release.yml`**, **`.github/dependabot.yml`** — CI, releases and dependency updates
+- **`../../.github/workflows/ci.yml`**, **`../../.github/dependabot.yml`** — CI and dependency updates, at the root of the monorepo
 
 ---
 
@@ -823,8 +810,8 @@ licences of the models and libraries it uses are listed in [docs/licenses.md](do
 
 ## 📧 Contact & Support
 
-- 🐛 [Open an issue](https://github.com/JanSzewczyk/form-lens-api/issues)
-- ⭐ [Star this repository](https://github.com/JanSzewczyk/form-lens-api)
+- 🐛 [Open an issue](https://github.com/JanSzewczyk/form-lens/issues)
+- ⭐ [Star this repository](https://github.com/JanSzewczyk/form-lens)
 - 👨‍💻 Check out the maintainer's [GitHub profile](https://github.com/JanSzewczyk)
 
 ---

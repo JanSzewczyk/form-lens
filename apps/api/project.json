@@ -1,0 +1,84 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "api",
+  "projectType": "application",
+  "sourceRoot": "apps/api/src",
+  "tags": ["type:app", "lang:python"],
+  "namedInputs": {
+    "apiSources": [
+      "{projectRoot}/**/*",
+      "!{projectRoot}/.venv/**/*",
+      "!{projectRoot}/.*_cache/**/*",
+      "!{projectRoot}/.hypothesis/**/*",
+      "!{projectRoot}/.schemathesis/**/*",
+      "!{projectRoot}/.golden/**/*",
+      "!{projectRoot}/models/**/*",
+      "!{projectRoot}/htmlcov/**/*",
+      "!{projectRoot}/.coverage*",
+      "!{projectRoot}/.openapi-base.json",
+      "!{projectRoot}/*.db*",
+      "!{projectRoot}/**/__pycache__/**/*",
+      "{workspaceRoot}/.github/workflows/*.yml"
+    ]
+  },
+  "targets": {
+    "install": {
+      "executor": "nx:run-commands",
+      "options": { "command": "uv sync --locked", "cwd": "apps/api" }
+    },
+    "check": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["apiSources"],
+      "outputs": ["{projectRoot}/.coverage"],
+      "options": { "command": "make check", "cwd": "apps/api" }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "continuous": true,
+      "options": { "command": "make run", "cwd": "apps/api" }
+    },
+    "migrate": {
+      "executor": "nx:run-commands",
+      "options": { "command": "make migrate", "cwd": "apps/api" }
+    },
+    "openapi": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["apiSources"],
+      "outputs": ["{projectRoot}/openapi.json"],
+      "options": { "command": "make openapi", "cwd": "apps/api" }
+    },
+    "openapi-check": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["apiSources"],
+      "options": { "command": "make openapi-check", "cwd": "apps/api" }
+    },
+    "api-check": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": { "command": "make api-check", "cwd": "apps/api" }
+    },
+    "audit": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": { "command": "make audit", "cwd": "apps/api" }
+    },
+    "docker-build": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": { "command": "make docker-build", "cwd": "apps/api" }
+    },
+    "evaluate": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": { "command": "make evaluate", "cwd": "apps/api" }
+    },
+    "test-models": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": { "command": "make test-models", "cwd": "apps/api" }
+    }
+  }
+}

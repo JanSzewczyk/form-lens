@@ -16,7 +16,7 @@ The Python package, its CLI and the image are still called `formlens`; `form-len
 
 ## Start
 
-You need Node 24 (`.nvmrc`), [uv](https://docs.astral.sh/uv/) and, for the images, Docker.
+You need Node 26 (`.nvmrc`), [uv](https://docs.astral.sh/uv/) and, for the images, Docker.
 
 ```bash
 npm ci                                  # the Studio, the client and Nx

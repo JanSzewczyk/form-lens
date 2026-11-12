@@ -22,6 +22,11 @@ concurrency:
 env:
   UV_VERSION: "0.13.7"
 
+# The Python service lives in apps/api: `run` steps start there. `uses` steps are set by hand below.
+defaults:
+  run:
+    working-directory: apps/api
+
 jobs:
   check:
     name: Check ✅
@@ -36,6 +41,7 @@ jobs:
         uses: astral-sh/setup-uv@v10.3.3
         with:
           version: ${{ env.UV_VERSION }}
+          working-directory: apps/api
       - name: Install dependencies ⚙️
         run: uv sync --locked
       - name: Run checks ✅
@@ -57,6 +63,7 @@ jobs:
         uses: astral-sh/setup-uv@v10.3.3
         with:
           version: ${{ env.UV_VERSION }}
+          working-directory: apps/api
       - name: Install dependencies ⚙️
         run: uv sync --locked
       - name: Audit dependencies 🔒
@@ -78,6 +85,7 @@ jobs:
         uses: astral-sh/setup-uv@v10.3.3
         with:
           version: ${{ env.UV_VERSION }}
+          working-directory: apps/api
       - name: Install dependencies ⚙️
         run: uv sync --locked --group api
       - name: Run API checks 📜
@@ -98,9 +106,9 @@ jobs:
       - name: Build image 🏗️
         uses: docker/build-push-action@v7.4.0
         with:
-          context: . # the checkout, so .dockerignore applies as in a local build
+          context: apps/api # the service folder, so its .dockerignore applies as in a local build
           load: true
-          tags: formlens:local # the image compose.yaml runs
+          tags: formlens:local # the image apps/api/compose.yaml runs
           cache-from: type=gha
           cache-to: type=gha,mode=max
       # The image has no model: starting it with an empty models folder must fail, loudly and at once,
@@ -148,6 +156,7 @@ jobs:
         uses: astral-sh/setup-uv@v10.3.3
         with:
           version: ${{ env.UV_VERSION }}
+          working-directory: apps/api
           python-version: "3.15t"
       - name: Install dependencies ⚙️
         run: uv sync --locked

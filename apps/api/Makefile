@@ -75,10 +75,10 @@ api-lint:
 # Changes listed in $(OASDIFF_IGNORE) are accepted: the example routes the template shipped were
 # removed on purpose. Delete the file once this branch is merged into main.
 api-breaking:
-	@if ! git cat-file -e origin/main:openapi.json 2>/dev/null; then \
+	@if ! git cat-file -e origin/main:./openapi.json 2>/dev/null; then \
 		echo "origin/main has no openapi.json yet; skipping the breaking-change check."; exit 0; \
 	fi; \
-	git show origin/main:openapi.json > $(BASE_SPEC); \
+	git show origin/main:./openapi.json > $(BASE_SPEC); \
 	if command -v oasdiff >/dev/null 2>&1; then \
 		oasdiff breaking $(BASE_SPEC) openapi.json --fail-on ERR --err-ignore $(OASDIFF_IGNORE); \
 	else \

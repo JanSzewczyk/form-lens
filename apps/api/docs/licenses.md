@@ -163,3 +163,5 @@ Nobody has done these yet; they are for a person, not a script:
   `info.license_expression`, `info.project_urls`, `info.requires_dist`)
 - Docling: <https://github.com/docling-project/docling>
 - Granite-Docling: <https://huggingface.co/ibm-granite/granite-docling-258M>
+
+<!-- api-only test -->

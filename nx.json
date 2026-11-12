@@ -6,14 +6,74 @@
       "{workspaceRoot}/.nvmrc",
       "{workspaceRoot}/nx.json"
     ],
-    "default": ["{projectRoot}/**/*", "sharedGlobals"]
+    "default": [
+      "{projectRoot}/**/*",
+      "sharedGlobals"
+    ]
   },
   "targetDefaults": {
-    "check": { "cache": true },
-    "lint": { "cache": true },
-    "type-check": { "cache": true },
-    "test": { "cache": true },
-    "build": { "cache": true }
+    "check": {
+      "cache": true
+    },
+    "lint": {
+      "cache": true
+    },
+    "type-check": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^default"
+      ]
+    },
+    "test": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^default"
+      ]
+    },
+    "build": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^default"
+      ]
+    },
+    "biome:ci": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^default"
+      ]
+    },
+    "knip:ci": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^default"
+      ]
+    },
+    "storybook:build": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^default"
+      ]
+    },
+    "generate:check": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^default"
+      ]
+    },
+    "test:unit": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^default"
+      ]
+    }
   },
   "analytics": false
 }

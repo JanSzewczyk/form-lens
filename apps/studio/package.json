@@ -1,0 +1,108 @@
+{
+  "name": "@form-lens/studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "analyze": "next analyze",
+    "biome:check": "biome check .",
+    "biome:ci": "biome ci --reporter=github",
+    "biome:fix": "biome check --write .",
+    "biome:format": "biome format .",
+    "biome:format:fix": "biome format --write .",
+    "biome:lint": "biome lint .",
+    "biome:lint:fix": "biome lint --write .",
+    "build": "next build",
+    "dev": "next dev",
+    "knip": "knip",
+    "knip:ci": "knip --reporter github-actions",
+    "start": "next start",
+    "storybook:build": "storybook build",
+    "storybook:dev": "storybook dev -p 6006",
+    "storybook:serve": "serve storybook-static",
+    "test": "vitest run --passWithNoTests",
+    "test:ci": "vitest --coverage",
+    "test:coverage": "vitest --coverage --passWithNoTests",
+    "test:e2e": "playwright test --pass-with-no-tests",
+    "test:e2e:ci": " playwright test --pass-with-no-tests",
+    "test:e2e:ui": "playwright test --ui --pass-with-no-tests",
+    "test:storybook": "vitest --project=storybook --coverage --passWithNoTests",
+    "test:storybook:coverage": "vitest run --project=storybook --coverage.enabled --coverage.reportsDirectory=coverage-storybook",
+    "test:ui": "vitest --ui",
+    "test:unit": "vitest run --project=unit --passWithNoTests",
+    "test:unit:coverage": "vitest run --project=unit --coverage.enabled --coverage.reportsDirectory=coverage-unit",
+    "test:watch": "vitest watch --passWithNoTests",
+    "type-check": "next typegen && tsc --noEmit"
+  },
+  "dependencies": {
+    "@form-lens/api-client": "*",
+    "@loglayer/transport-log-file-rotation": "^3.3.0",
+    "@loglayer/transport-pino": "^3.3.0",
+    "@szum-tech/design-system": "^3.21.9",
+    "@t3-oss/env-nextjs": "^0.13.8",
+    "@tailwindcss/postcss": "^4.3.3",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "loglayer": "^9.4.0",
+    "lucide-react": "^1.66.0",
+    "next": "^16.4.3",
+    "next-themes": "^0.4.6",
+    "pino": "^10.4.0",
+    "pino-pretty": "^13.2.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "serialize-error": "^13.0.2",
+    "server-only": "^0.0.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@biomejs/biome": "^2.6.4",
+    "@chromatic-com/storybook": "^5.6.0",
+    "@playwright/test": "^1.64.1",
+    "@storybook-community/storybook-dark-mode": "^7.1.4",
+    "@storybook/addon-a11y": "^10.6.5",
+    "@storybook/addon-docs": "^10.6.5",
+    "@storybook/addon-vitest": "^10.6.5",
+    "@storybook/nextjs-vite": "^10.6.5",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@total-typescript/ts-reset": "^0.6.1",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitest/browser-playwright": "^5.0.5",
+    "@vitest/coverage-v8": "^5.0.5",
+    "@vitest/ui": "^5.0.5",
+    "knip": "^6.44.1",
+    "playwright": "^1.64.1",
+    "serve": "^14.2.5",
+    "storybook": "^10.6.5",
+    "storybook-addon-tag-badges": "^3.0.4",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  },
+  "nx": {
+    "targets": {
+      "build": {
+        "outputs": [
+          "{projectRoot}/.next",
+          "!{projectRoot}/.next/cache"
+        ]
+      },
+      "storybook:build": {
+        "outputs": [
+          "{projectRoot}/storybook-static"
+        ]
+      },
+      "docker-build": {
+        "cache": false,
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "docker build -f apps/studio/Dockerfile -t formlens-studio:local .",
+          "cwd": "{workspaceRoot}"
+        }
+      }
+    }
+  }
+}

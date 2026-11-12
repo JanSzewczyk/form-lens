@@ -28,8 +28,58 @@ defaults:
     working-directory: apps/api
 
 jobs:
-  check:
-    name: Check ✅
+  # Which apps does the change touch? Nx answers from the project graph and the declared inputs of each project
+  # (a changed apps/api/openapi.json reaches the generated client and the Studio; a workflow change reaches all).
+  # The weekly run and a manual run test everything.
+  affected:
+    name: Affected 🔍
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read # nx-set-shas finds the last successful run on main
+    defaults:
+      run:
+        working-directory: .
+    outputs:
+      api: ${{ steps.projects.outputs.api }}
+      studio: ${{ steps.projects.outputs.studio }}
+    steps:
+      - name: Checkout code 📚
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0 # the base commit of the change must be in the clone
+          persist-credentials: false
+      - name: Set up Node 🟢
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies ⚙️
+        run: npm ci
+      - name: Find the base commit 🔎
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        uses: nrwl/nx-set-shas@v5.1.0
+      - name: List the affected apps 🔍
+        id: projects
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = "pull_request" ] || [ "$EVENT" = "push" ]; then
+            projects="$(npx nx show projects --affected --json)"
+          else
+            projects="$(npx nx show projects --json)"
+          fi
+          echo "Affected projects: $projects"
+          {
+            echo "api=$(jq 'any(. == "api")' <<< "$projects")"
+            echo "studio=$(jq 'any(. == "@form-lens/studio" or . == "@form-lens/api-client")' <<< "$projects")"
+          } >> "$GITHUB_OUTPUT"
+
+  api-check:
+    name: API check 🐍
+    needs: affected
+    if: needs.affected.outputs.api == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -50,6 +100,7 @@ jobs:
         run: uv run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
 
   # Apart from the checks: a new advisory fails this job, not the code checks, and both results show.
+  # It always runs, whatever the change touched: advisories appear without a commit.
   audit:
     name: Audit 🔒
     runs-on: ubuntu-latest
@@ -66,13 +117,22 @@ jobs:
           working-directory: apps/api
       - name: Install dependencies ⚙️
         run: uv sync --locked
-      - name: Audit dependencies 🔒
+      - name: Audit Python dependencies 🔒
         run: make audit
+      - name: Set up Node 🟢
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Audit npm dependencies 🔒
+        working-directory: .
+        run: npm audit --omit=dev --audit-level=high
 
   # Contract tooling: Spectral on the spec, oasdiff against main, Schemathesis against a live server.
-  api:
+  api-contract:
     name: API contract 📜
-    if: github.event_name != 'schedule'
+    needs: affected
+    if: needs.affected.outputs.api == 'true' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -91,9 +151,10 @@ jobs:
       - name: Run API checks 📜
         run: make api-check
 
-  docker:
-    name: Docker 🐳
-    if: github.event_name != 'schedule'
+  api-docker:
+    name: API Docker 🐳
+    needs: affected
+    if: needs.affected.outputs.api == 'true' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -140,6 +201,8 @@ jobs:
   # Nx runs the project targets; the generated client is checked against apps/api/openapi.json.
   studio:
     name: Studio check ⚛️
+    needs: affected
+    if: needs.affected.outputs.studio == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -164,7 +227,8 @@ jobs:
 
   studio-docker:
     name: Studio Docker 🐳
-    if: github.event_name != 'schedule'
+    needs: affected
+    if: needs.affected.outputs.studio == 'true' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -195,6 +259,28 @@ jobs:
           done
           docker logs studio
           exit 1
+
+  # The one required check for the code. A job skipped because its app is not affected counts as passed; a job
+  # that failed or was cancelled does not, and neither does a crash of the job that decides what is affected.
+  # `if: always()` is what makes it run (and fail) when something upstream failed instead of being skipped.
+  check:
+    name: Check ✅
+    needs: [affected, api-check, api-contract, api-docker, studio, studio-docker]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: . # no checkout here, so apps/api does not exist
+    steps:
+      - name: Every job passed or was not needed ✅
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Results: $RESULTS"
+          case " $RESULTS " in
+            *" failure "*|*" cancelled "*) echo "A job failed or was cancelled." >&2; exit 1 ;;
+          esac
 
   # Informational: the free-threaded build exposes races the GIL hides. Never blocks a merge.
   # Switched off: `uv sync --locked --python 3.15t` cannot install the runtime dependencies. torch and mlx

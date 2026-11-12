@@ -107,7 +107,8 @@ FastAPI service. Python 3.15, uv, Ruff, mypy (strict), pytest.
 - `torch` and `torchvision` are direct dependencies with a CPU index on Linux (`[tool.uv.sources]`);
   pip-audit skips the `+cpu` local version, so `make audit` strips it. A `torch` bump needs the version
   on both PyPI and the PyTorch CPU index.
-- CI jobs `check` (`make check`) and `audit` (`make audit`) are separate, so a new advisory does not
-  hide the code checks. Branch protection lists them by name (`Check ✅`, `Audit 🔒`); renaming one
-  leaves pull requests waiting for a status that never arrives.
+- Branch protection requires two checks by name: `Check ✅` (the gate over the API and Studio jobs; a job skipped
+  because its app is not affected counts as passed) and `Audit 🔒` (a separate job, so a new advisory does not hide
+  the code checks). Renaming either leaves pull requests waiting for a status that never arrives. The API jobs are
+  `API check 🐍`, `API contract 📜` and `API Docker 🐳`.
 - `uv run --python 3.15t` replaces `.venv` with the free-threaded build; `uv sync` restores it.

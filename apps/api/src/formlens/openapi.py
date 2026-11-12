@@ -19,7 +19,7 @@ you report a problem.
 METADATA: Final[dict[str, Any]] = {
     "version": __version__,
     "description": DESCRIPTION,
-    "contact": {"name": "Szum-Tech", "url": "https://github.com/JanSzewczyk/form-lens-api"},
+    "contact": {"name": "Szum-Tech", "url": "https://github.com/JanSzewczyk/form-lens"},
     "license_info": {"name": "Proprietary (all rights reserved)"},
     # Relative, so "Try it out" calls the host that serves the docs, wherever it runs.
     "servers": [{"url": "/", "description": "The host that serves this document"}],

@@ -19,15 +19,17 @@
      the rest. Values: `skill:<name>` | `agent:<name>` | `command:<shell>` (brief on stdin) |
      `in-session` (the session itself). Example: `api: agent:python-developer`. -->
 default: in-session
+api: agent:python:python-developer
+@form-lens/studio: in-session
 
 ## Actions
 
 <!-- user-override -->
 <!-- Who performs a git action. `skill:<name>` | `agent:<name>` | `command:<shell>`. Unset → the
      session creates the branch / commit / PR itself with git and gh (or with a matching skill it has). -->
-branch:
-commit:
-pr:
+branch: skill:git-workflow:create-branch
+commit: skill:git-workflow:create-commit
+pr: skill:git-workflow:create-pull-request
 
 ## Review
 

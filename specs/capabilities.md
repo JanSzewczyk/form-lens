@@ -1,5 +1,7 @@
 # Project Capabilities
 
+<!-- sdd-format: 2 -->
+
 > The `<!-- auto-generated -->` section is rewritten by `/sdd:doctor init`; `<!-- user-override -->`
 > sections are never overwritten.
 
@@ -21,6 +23,10 @@
 default: in-session
 api: agent:python:python-developer
 @form-lens/studio: in-session
+commit: task
+isolation: none
+merge: pr
+parallel: 3
 
 ## Actions
 
@@ -44,6 +50,7 @@ default: auto
 api: agent:python:python-reviewer
 @form-lens/studio: agent:nextjs:code-reviewer
 checks:
+ci: on
 
 ## Generated / out-of-band paths
 

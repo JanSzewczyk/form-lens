@@ -10,12 +10,17 @@
   "scripts": {
     "generate": "orval",
     "generate:check": "node scripts/generate-check.mjs",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:unit:coverage": "vitest run --coverage",
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
+    "@vitest/coverage-v8": "^5.1.0",
     "orval": "8.47.0",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
   },
   "nx": {
     "targets": {

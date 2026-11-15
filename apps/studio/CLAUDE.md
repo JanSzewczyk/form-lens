@@ -184,8 +184,8 @@ The app uses `next-themes` for dark/light/system theme switching:
 
 ## Rules
 
-Detailed conventions live in `.claude/rules/` (code-style, ui-szum-tech-design-system, feature-architecture,
-db-patterns, nextjs-page-layout-patterns). Read the relevant file before touching that area.
+Detailed conventions live in `.claude/rules/` (code-style, ui-szum-tech-design-system,
+nextjs-page-layout-patterns). Read the relevant file before touching that area.
 
 ## Conventions
 

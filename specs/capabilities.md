@@ -41,6 +41,8 @@ pr: skill:git-workflow:create-pull-request
 tests: run
 publish: ask
 default: auto
+api: agent:python:python-reviewer
+@form-lens/studio: agent:nextjs:code-reviewer
 checks:
 
 ## Generated / out-of-band paths

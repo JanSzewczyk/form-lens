@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import CursorResult, case, delete, func, insert, literal, select, update
+from sqlalchemy import CursorResult, case, delete, func, insert, literal, or_, select, update
 from sqlalchemy.orm import aliased
 
 from formlens.database import Database
@@ -111,6 +111,36 @@ class SqliteExtractionRepository:
         with self._database.read() as session:
             row = session.get(ExtractionRow, extraction_id)
             return _to_extraction(row) if row is not None else None
+
+    def page(
+        self,
+        *,
+        statuses: frozenset[ExtractionStatus],
+        template_id: UUID | None,
+        finished_after: datetime,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[Extraction], int]:
+        """Read one page and the total in one session.
+
+        The expiry is the negation of `Extraction.is_expired`: a row is kept while it has not finished or
+        finished after `finished_after`. Newest first; the id breaks a tie.
+        """
+        matching = [or_(ExtractionRow.finished_at.is_(None), ExtractionRow.finished_at > finished_after)]
+        if statuses:
+            matching.append(ExtractionRow.status.in_(sorted(status.value for status in statuses)))
+        if template_id is not None:
+            matching.append(ExtractionRow.template_id == template_id)
+        with self._database.read() as session:
+            rows = session.scalars(
+                select(ExtractionRow)
+                .where(*matching)
+                .order_by(ExtractionRow.created_at.desc(), ExtractionRow.id.desc())
+                .limit(limit)
+                .offset(offset)
+            ).all()
+            total = session.scalar(select(func.count()).select_from(ExtractionRow).where(*matching)) or 0
+            return [_to_extraction(row) for row in rows], total
 
     def read_input(self, extraction_id: UUID) -> bytes | None:
         """Read the upload of a job that has not ended."""

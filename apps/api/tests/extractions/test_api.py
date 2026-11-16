@@ -22,6 +22,7 @@ from formlens.parsing.exceptions import InvalidFile
 from formlens.problems import PROBLEM_MEDIA_TYPE
 from tests.conftest import make_settings
 from tests.documents import png_of_size, sample
+from tests.extractions.factories import NOW, TEMPLATE_ID, ExtractionFactory, TemplateSnapshotFactory
 from tests.extractions.fakes import FakeExtractor
 from tests.fakes import FakeParser
 from tests.templates.factories import field_body, template_body
@@ -352,12 +353,19 @@ def test_a_browser_may_read_the_location_header(db_url: str) -> None:
 # --- the spec --------------------------------------------------------------------------------------
 
 
-def test_the_two_routes_are_in_the_spec_with_their_statuses(client: TestClient) -> None:
+def test_the_three_routes_are_in_the_spec_with_their_statuses(client: TestClient) -> None:
     spec = client.app.openapi()  # type: ignore[attr-defined]  # the app of the client
 
     post = spec["paths"]["/v1/extractions"]["post"]
+    listing = spec["paths"]["/v1/extractions"]["get"]
     get = spec["paths"]["/v1/extractions/{extraction_id}"]["get"]
-    assert (post["operationId"], get["operationId"]) == ("create_extraction", "get_extraction")
+    assert (post["operationId"], listing["operationId"], get["operationId"]) == (
+        "create_extraction",
+        "list_extractions",
+        "get_extraction",
+    )
+    assert sorted(listing["responses"]) == ["200", "422"]
+    assert {parameter["name"] for parameter in listing["parameters"]} == {"limit", "offset", "status", "template_id"}
     assert sorted(post["responses"]) == ["202", "400", "404", "413", "415", "422", "503"]
     assert "Location" in post["responses"]["202"]["headers"]
     assert "Retry-After" in post["responses"]["503"]["headers"]
@@ -451,9 +459,8 @@ def test_a_deleted_template_is_a_404_for_a_new_document_and_nothing_is_queued(ap
 @pytest.mark.parametrize(
     ("method", "path", "allowed"),
     [
-        pytest.param("GET", "/v1/extractions", "POST", id="collection-get"),
-        pytest.param("PUT", "/v1/extractions", "POST", id="collection-put"),
-        pytest.param("DELETE", "/v1/extractions", "POST", id="collection-delete"),
+        pytest.param("PUT", "/v1/extractions", "GET, POST", id="collection-put"),
+        pytest.param("DELETE", "/v1/extractions", "GET, POST", id="collection-delete"),
         pytest.param("POST", f"/v1/extractions/{UUID(int=1)}", "GET", id="item-post"),
         pytest.param("DELETE", f"/v1/extractions/{UUID(int=1)}", "GET", id="item-delete"),
         pytest.param("PUT", f"/v1/extractions/{UUID(int=1)}", "GET", id="item-put"),
@@ -637,3 +644,404 @@ def test_a_corrupt_file_with_a_valid_signature_is_queued_and_the_extraction_fail
 
     assert queued.status_code == 202
     assert (failed["status"], failed["error"]["reason"], failed["attempts"]) == ("failed", "invalid_file", 1)
+
+
+# --- the list --------------------------------------------------------------------------------------
+
+
+def put(
+    app: FastAPI,
+    n: int,
+    *,
+    status: ExtractionStatus = ExtractionStatus.PENDING,
+    template_id: str | None = None,
+    created_at: datetime | None = None,
+    finished_at: datetime | None = None,
+) -> Extraction:
+    """Store extraction number `n` as it is given, `n` seconds after `NOW`, the way the service stores one."""
+    snapshot = TemplateSnapshotFactory.build(template_id=UUID(template_id) if template_id else TEMPLATE_ID)
+    extraction = ExtractionFactory.build(
+        id=UUID(int=n),
+        status=status,
+        template=snapshot,
+        created_at=created_at or NOW + timedelta(seconds=n),
+        finished_at=finished_at,
+    )
+    app.state.extraction_repository.add(extraction, PDF, max_pending=1000)
+    return extraction
+
+
+def ids_of(response: Any) -> list[str]:
+    return [item["id"] for item in response.json()["items"]]
+
+
+def test_the_list_has_every_extraction_newest_first_and_a_total(app: FastAPI, client: TestClient) -> None:
+    for n in (1, 2, 3):
+        put(app, n)
+
+    response = client.get(URL)
+
+    assert response.status_code == 200
+    assert ids_of(response) == [str(UUID(int=n)) for n in (3, 2, 1)]
+    body = response.json()
+    assert (body["total"], body["limit"], body["offset"]) == (3, 20, 0)
+    assert set(body) == {"items", "total", "limit", "offset"}
+
+
+def test_the_list_of_an_empty_store_is_an_empty_page(client: TestClient) -> None:
+    response = client.get(URL)
+
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "total": 0, "limit": 20, "offset": 0}
+
+
+def test_the_third_page_of_twenty_five_has_five_items_and_the_total_of_all(app: FastAPI, client: TestClient) -> None:
+    for n in range(1, 26):
+        put(app, n)
+
+    response = client.get(URL, params={"limit": 10, "offset": 20})
+
+    body = response.json()
+    assert (response.status_code, len(body["items"]), body["total"], body["limit"], body["offset"]) == (
+        200,
+        5,
+        25,
+        10,
+        20,
+    )
+    assert ids_of(response) == [str(UUID(int=n)) for n in (5, 4, 3, 2, 1)]
+
+
+def test_an_offset_past_the_end_is_an_empty_page_with_the_real_total(app: FastAPI, client: TestClient) -> None:
+    for n in (1, 2, 3):
+        put(app, n)
+
+    response = client.get(URL, params={"offset": 100})
+
+    assert (response.status_code, response.json()["items"], response.json()["total"]) == (200, [], 3)
+
+
+def test_two_extractions_created_at_the_same_time_keep_their_order_across_pages(
+    app: FastAPI, client: TestClient
+) -> None:
+    for n in range(1, 5):
+        put(app, n, created_at=NOW)
+
+    first = client.get(URL, params={"limit": 2, "offset": 0})
+    second = client.get(URL, params={"limit": 2, "offset": 2})
+
+    assert ids_of(first) + ids_of(second) == [str(UUID(int=n)) for n in (4, 3, 2, 1)]
+
+
+def test_the_status_filter_keeps_only_that_status_and_the_total_follows(app: FastAPI, client: TestClient) -> None:
+    put(app, 1, status=ExtractionStatus.PENDING)
+    put(app, 2, status=ExtractionStatus.FAILED, finished_at=datetime.now(UTC))
+    put(app, 3, status=ExtractionStatus.FAILED, finished_at=datetime.now(UTC))
+
+    response = client.get(URL, params={"status": "failed"})
+
+    assert ids_of(response) == [str(UUID(int=3)), str(UUID(int=2))]
+    assert response.json()["total"] == 2
+
+
+def test_the_template_filter_keeps_only_that_templates_extractions(app: FastAPI, client: TestClient) -> None:
+    template_a, template_b = str(UUID(int=0xA)), str(UUID(int=0xB))
+    put(app, 1, template_id=template_a)
+    put(app, 2, template_id=template_b)
+    put(app, 3, template_id=template_a)
+
+    response = client.get(URL, params={"template_id": template_a})
+
+    assert ids_of(response) == [str(UUID(int=3)), str(UUID(int=1))]
+    assert response.json()["total"] == 2
+
+
+def test_status_and_template_filters_must_both_match(app: FastAPI, client: TestClient) -> None:
+    template_a, template_b = str(UUID(int=0xA)), str(UUID(int=0xB))
+    finished = datetime.now(UTC)
+    put(app, 1, template_id=template_a, status=ExtractionStatus.FAILED, finished_at=finished)
+    put(app, 2, template_id=template_b, status=ExtractionStatus.FAILED, finished_at=finished)
+    put(app, 3, template_id=template_a, status=ExtractionStatus.PENDING)
+
+    response = client.get(URL, params={"status": "failed", "template_id": template_a})
+
+    assert ids_of(response) == [str(UUID(int=1))]
+    assert response.json()["total"] == 1
+
+
+def test_a_repeated_status_matches_any_of_them(app: FastAPI, client: TestClient) -> None:
+    finished = datetime.now(UTC)
+    put(app, 1, status=ExtractionStatus.PENDING)
+    put(app, 2, status=ExtractionStatus.RUNNING)
+    put(app, 3, status=ExtractionStatus.COMPLETED, finished_at=finished)
+    put(app, 4, status=ExtractionStatus.FAILED, finished_at=finished)
+
+    response = client.get(URL, params=[("status", "pending"), ("status", "running")])
+
+    assert response.status_code == 200
+    assert ids_of(response) == [str(UUID(int=2)), str(UUID(int=1))]
+    assert response.json()["total"] == 2
+
+
+def test_the_same_status_given_twice_lists_each_extraction_once(app: FastAPI, client: TestClient) -> None:
+    put(app, 1, status=ExtractionStatus.PENDING)
+    put(app, 2, status=ExtractionStatus.FAILED, finished_at=datetime.now(UTC))
+
+    response = client.get(URL, params=[("status", "failed"), ("status", "failed")])
+
+    assert ids_of(response) == [str(UUID(int=2))]
+    assert response.json()["total"] == 1
+
+
+def test_a_template_that_does_not_exist_is_an_empty_page_not_a_404(client: TestClient) -> None:
+    response = client.get(URL, params={"template_id": str(uuid4())})
+
+    assert (response.status_code, response.json()["items"], response.json()["total"]) == (200, [], 0)
+
+
+def test_the_extractions_of_a_deleted_template_are_still_listed(client: TestClient) -> None:
+    template = make_template(client)
+    submitted = submit(client, template["id"]).json()
+    assert client.delete(f"/v1/templates/{template['id']}").status_code == 204
+
+    response = client.get(URL, params={"template_id": template["id"]})
+
+    assert (response.status_code, ids_of(response), response.json()["total"]) == (200, [submitted["id"]], 1)
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        pytest.param({"status": "unknown"}, id="status-unknown"),
+        pytest.param({"template_id": "not-a-uuid"}, id="template-id-not-a-uuid"),
+        pytest.param({"limit": 0}, id="limit-0"),
+        pytest.param({"limit": 101}, id="limit-101"),
+        pytest.param({"offset": -1}, id="offset-negative"),
+    ],
+)
+def test_an_invalid_filter_or_page_parameter_is_a_422_problem(client: TestClient, params: dict[str, Any]) -> None:
+    response = client.get(URL, params=params)
+
+    assert response.status_code == 422
+    assert response.headers["content-type"] == PROBLEM_MEDIA_TYPE
+    assert response.json()["type"] == problem_type("validation-error")
+
+
+def test_a_repeated_status_with_one_bad_value_is_a_422(client: TestClient) -> None:
+    response = client.get(URL, params=[("status", "pending"), ("status", "nope")])
+
+    assert (response.status_code, response.json()["type"]) == (422, problem_type("validation-error"))
+
+
+def test_a_scalar_parameter_given_twice_is_still_a_422(client: TestClient) -> None:
+    response = client.get(URL, params=[("template_id", str(uuid4())), ("template_id", str(uuid4()))])
+
+    assert (response.status_code, response.json()["type"]) == (422, problem_type("validation-error"))
+
+
+def test_each_listed_item_is_the_same_as_the_extraction_read_by_id(app: FastAPI, client: TestClient) -> None:
+    template = make_template(client)
+    location = submit(client, template["id"]).headers["Location"]
+    processor(app).run_once()
+    submit(client, template["id"])  # one more, still pending
+
+    listed = client.get(URL).json()["items"]
+
+    assert len(listed) == 2
+    assert [client.get(f"{URL}/{item['id']}").json() for item in listed] == listed
+    assert {item["status"] for item in listed} == {"completed", "pending"}
+    assert location.rsplit("/", 1)[1] in {item["id"] for item in listed}
+
+
+def test_a_result_past_its_time_to_live_is_neither_listed_nor_counted_and_is_a_404_by_id(
+    app: FastAPI, client: TestClient
+) -> None:
+    now = datetime.now(UTC)
+    expired = put(app, 1, status=ExtractionStatus.COMPLETED, finished_at=now - timedelta(hours=25))
+    fresh = put(app, 2, status=ExtractionStatus.COMPLETED, finished_at=now - timedelta(hours=23))
+
+    listed = client.get(URL)
+
+    assert ids_of(listed) == [str(fresh.id)]
+    assert listed.json()["total"] == 1
+    assert client.get(f"{URL}/{expired.id}").status_code == 404
+    assert client.get(f"{URL}/{fresh.id}").status_code == 200
+
+
+def test_a_pending_extraction_older_than_the_time_to_live_is_still_listed(app: FastAPI, client: TestClient) -> None:
+    old = put(app, 1, created_at=datetime.now(UTC) - timedelta(days=30))
+
+    response = client.get(URL)
+
+    assert (ids_of(response), response.json()["total"]) == ([str(old.id)], 1)
+
+
+# --- the list: edges the first tests leave open ---------------------------------------------------
+
+
+def test_the_list_without_a_limit_returns_the_default_page_of_twenty(app: FastAPI, client: TestClient) -> None:
+    for n in range(1, 26):
+        put(app, n)
+
+    body = client.get(URL).json()
+
+    assert (len(body["items"]), body["total"], body["limit"], body["offset"]) == (20, 25, 20, 0)
+    assert [item["id"] for item in body["items"]] == [str(UUID(int=n)) for n in range(25, 5, -1)]
+
+
+@pytest.mark.parametrize(
+    ("params", "expected_ids", "limit", "offset"),
+    [
+        pytest.param({"limit": 100}, [3, 2, 1], 100, 0, id="limit-100"),
+        pytest.param({"limit": 1}, [3], 1, 0, id="limit-1"),
+        pytest.param({"limit": 5, "offset": 2147483647}, [], 5, 2147483647, id="offset-maximum"),
+        pytest.param({"offset": 0}, [3, 2, 1], 20, 0, id="offset-0"),
+    ],
+)
+def test_the_limit_and_offset_at_their_edges_are_accepted_and_echoed(
+    app: FastAPI, client: TestClient, params: dict[str, Any], expected_ids: list[int], limit: int, offset: int
+) -> None:
+    for n in (1, 2, 3):
+        put(app, n)
+
+    response = client.get(URL, params=params)
+
+    body = response.json()
+    assert response.status_code == 200
+    assert ids_of(response) == [str(UUID(int=n)) for n in expected_ids]
+    assert (body["total"], body["limit"], body["offset"]) == (3, limit, offset)
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        pytest.param([("offset", "2147483648")], id="offset-over-the-maximum"),
+        pytest.param([("limit", "abc")], id="limit-not-a-number"),
+        pytest.param([("limit", "1.5")], id="limit-not-an-integer"),
+        pytest.param([("offset", "abc")], id="offset-not-a-number"),
+        pytest.param([("limit", "5"), ("limit", "6")], id="limit-twice"),
+        pytest.param([("offset", "0"), ("offset", "1")], id="offset-twice"),
+        pytest.param([("status", "")], id="status-empty"),
+        pytest.param([("status", "FAILED")], id="status-wrong-case"),
+        pytest.param([("template_id", "")], id="template-id-empty"),
+    ],
+)
+def test_more_invalid_list_parameters_are_a_422_problem_and_list_nothing(
+    app: FastAPI, client: TestClient, params: Any
+) -> None:
+    put(app, 1)
+
+    response = client.get(URL, params=params)
+
+    assert response.status_code == 422
+    assert response.headers["content-type"] == PROBLEM_MEDIA_TYPE
+    assert response.json()["type"] == problem_type("validation-error")
+    assert "items" not in response.json()
+
+
+def test_the_list_follows_creation_time_not_the_order_of_ids_or_of_insertion(app: FastAPI, client: TestClient) -> None:
+    put(app, 2, created_at=NOW + timedelta(seconds=30))
+    put(app, 3, created_at=NOW)
+    put(app, 1, created_at=NOW + timedelta(seconds=60))
+
+    response = client.get(URL)
+
+    assert ids_of(response) == [str(UUID(int=n)) for n in (1, 2, 3)]
+
+
+def test_a_failed_extraction_past_its_time_to_live_is_neither_listed_nor_counted_under_a_status_filter(
+    app: FastAPI, client: TestClient
+) -> None:
+    now = datetime.now(UTC)
+    put(app, 1, status=ExtractionStatus.FAILED, finished_at=now - timedelta(hours=25))
+    kept = put(app, 2, status=ExtractionStatus.FAILED, finished_at=now - timedelta(hours=1))
+
+    response = client.get(URL, params=[("status", "failed"), ("status", "completed")])
+
+    assert (ids_of(response), response.json()["total"]) == ([str(kept.id)], 1)
+
+
+def test_expired_extractions_in_the_middle_leave_no_gap_between_pages_and_no_count(
+    app: FastAPI, client: TestClient
+) -> None:
+    now = datetime.now(UTC)
+    for n in (1, 2, 4, 5):
+        put(app, n, status=ExtractionStatus.FAILED, finished_at=now)
+    put(app, 3, status=ExtractionStatus.FAILED, finished_at=now - timedelta(hours=48))
+
+    first = client.get(URL, params={"limit": 2, "offset": 0})
+    second = client.get(URL, params={"limit": 2, "offset": 2})
+    third = client.get(URL, params={"limit": 2, "offset": 4})
+
+    assert ids_of(first) + ids_of(second) == [str(UUID(int=n)) for n in (5, 4, 2, 1)]
+    assert (ids_of(third), first.json()["total"], second.json()["total"], third.json()["total"]) == ([], 4, 4, 4)
+
+
+def test_the_time_to_live_of_the_list_is_the_one_in_the_settings(db_url: str) -> None:
+    app = create_app(
+        make_settings(db_url=db_url, result_ttl_hours=1),
+        parser_factory=lambda _: FakeParser(),
+        extractor_factory=lambda _: FakeExtractor(),
+        start_worker=False,
+    )
+    try:
+        with TestClient(app) as client:
+            now = datetime.now(UTC)
+            put(app, 1, status=ExtractionStatus.COMPLETED, finished_at=now - timedelta(hours=2))
+            kept = put(app, 2, status=ExtractionStatus.COMPLETED, finished_at=now - timedelta(minutes=30))
+
+            response = client.get(URL)
+    finally:
+        app.state.database.dispose()
+
+    assert (ids_of(response), response.json()["total"]) == ([str(kept.id)], 1)
+
+
+@pytest.mark.parametrize("spelling", [str.upper, lambda text: text.replace("-", "")], ids=["uppercase", "no-hyphens"])
+def test_a_template_id_in_another_uuid_spelling_matches_the_same_extractions(
+    app: FastAPI, client: TestClient, spelling: Any
+) -> None:
+    template_a, template_b = str(UUID(int=0xAB)), str(UUID(int=0xCD))
+    put(app, 1, template_id=template_a)
+    put(app, 2, template_id=template_b)
+
+    response = client.get(URL, params={"template_id": spelling(template_a)})
+
+    assert (ids_of(response), response.json()["total"]) == ([str(UUID(int=1))], 1)
+
+
+def test_all_four_statuses_given_together_list_every_extraction_that_has_not_expired(
+    app: FastAPI, client: TestClient
+) -> None:
+    now = datetime.now(UTC)
+    put(app, 1, status=ExtractionStatus.PENDING)
+    put(app, 2, status=ExtractionStatus.RUNNING)
+    put(app, 3, status=ExtractionStatus.COMPLETED, finished_at=now)
+    put(app, 4, status=ExtractionStatus.FAILED, finished_at=now)
+    put(app, 5, status=ExtractionStatus.FAILED, finished_at=now - timedelta(days=2))
+
+    response = client.get(URL, params=[("status", s.value) for s in ExtractionStatus])
+
+    assert ids_of(response) == [str(UUID(int=n)) for n in (4, 3, 2, 1)]
+    assert response.json()["total"] == 4
+
+
+def test_a_failed_item_in_the_list_is_the_same_as_the_failed_extraction_read_by_id(db_url: str) -> None:
+    app = create_app(
+        make_settings(db_url=db_url),
+        parser_factory=lambda _: FakeParser(error=InvalidFile()),
+        extractor_factory=lambda _: FakeExtractor(),
+        start_worker=False,
+    )
+    try:
+        with TestClient(app) as client:
+            location = submit(client, make_template(client)["id"], b"%PDF-1.7 corrupt").headers["Location"]
+            processor(app).run_once()
+            by_id = client.get(location).json()
+
+            listed = client.get(URL).json()["items"]
+    finally:
+        app.state.database.dispose()
+
+    assert (by_id["status"], by_id["error"]["reason"]) == ("failed", "invalid_file")
+    assert listed == [by_id]

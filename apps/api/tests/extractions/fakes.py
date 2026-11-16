@@ -52,6 +52,26 @@ class FakeExtractionRepository:
         with self._lock:
             return self.rows.get(extraction_id)
 
+    def page(
+        self,
+        *,
+        statuses: frozenset[ExtractionStatus],
+        template_id: UUID | None,
+        finished_after: datetime,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[Extraction], int]:
+        with self._lock:
+            matching = [
+                row
+                for row in self.rows.values()
+                if (row.finished_at is None or row.finished_at > finished_after)
+                and (not statuses or row.status in statuses)
+                and (template_id is None or row.template.template_id == template_id)
+            ]
+        matching.sort(key=lambda row: (row.created_at, row.id), reverse=True)
+        return matching[offset : offset + limit], len(matching)
+
     def read_input(self, extraction_id: UUID) -> bytes | None:
         with self._lock:
             return self.inputs.get(extraction_id)

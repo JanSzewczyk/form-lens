@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { configureApiClient, getHealth, getTemplate, listTemplates } from "./index";
+import { configureApiClient, getHealth, getTemplate, listExtractions, listTemplates } from "./index";
 
 function stubFetch(body: unknown, status = 200) {
   const mock = vi.fn<typeof fetch>().mockResolvedValue(
@@ -37,6 +37,21 @@ describe("package entry point", () => {
     await listTemplates({ limit: 5 });
 
     expect(new URL(requestedUrl(mock)).searchParams.get("limit")).toBe("5");
+  });
+
+  it("sends a repeated status filter as separate parameters, not a comma list", async () => {
+    const mock = stubFetch({ items: [] });
+    configureApiClient({ baseUrl: "http://localhost:8000" });
+
+    await listExtractions({ status: ["pending", "running"], template_id: "tpl-1", limit: 10 });
+
+    const url = requestedUrl(mock);
+    expect(url).toContain("status=pending&status=running");
+    expect(url).not.toContain(",");
+    const params = new URL(url).searchParams;
+    expect(params.getAll("status")).toEqual(["pending", "running"]);
+    expect(params.get("template_id")).toBe("tpl-1");
+    expect(params.get("limit")).toBe("10");
   });
 
   it("returns a documented error status as data, narrowed by status", async () => {

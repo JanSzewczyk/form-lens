@@ -3,12 +3,14 @@
 from typing import Annotated, Any, Final
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Response
+from fastapi import APIRouter, Depends, Path, Query, Response
 
+from formlens.extractions.domain.model import ExtractionStatus
 from formlens.extractions.entrypoints.dependencies import get_extraction_service, read_template_id
 from formlens.extractions.entrypoints.errors import EXTRACTION_NOT_FOUND, QUEUE_FULL
-from formlens.extractions.entrypoints.schemas import ExtractionResponse
+from formlens.extractions.entrypoints.schemas import ExtractionPage, ExtractionResponse
 from formlens.extractions.service_layer.service import ExtractionService
+from formlens.pagination import PageParams, get_page_params
 from formlens.parsing.dependencies import read_upload
 from formlens.parsing.errors import FILE_TOO_LARGE, INVALID_FILE, UNSUPPORTED_MEDIA_TYPE
 from formlens.problems import VALIDATION_ERROR, problem_response
@@ -86,6 +88,46 @@ def create_extraction(
     extraction = service.submit(content, template_id)
     response.headers["Location"] = f"{EXTRACTIONS_PATH}/{extraction.id}"
     return ExtractionResponse.from_domain(extraction)
+
+
+@router.get(
+    "",
+    operation_id="list_extractions",
+    response_model=ExtractionPage,
+    responses={422: problem_response(VALIDATION_ERROR)},
+)
+def list_extractions(
+    service: Annotated[ExtractionService, Depends(get_extraction_service)],
+    page: Annotated[PageParams, Depends(get_page_params)],
+    status: Annotated[
+        list[ExtractionStatus] | None,
+        Query(
+            description="Keep extractions in this status. Repeat the parameter to accept several: "
+            "`?status=pending&status=running`. Omit it to keep every status.",
+            examples=["failed"],
+        ),
+    ] = None,
+    template_id: Annotated[
+        UUID | None,
+        Query(
+            description="Keep extractions made with this template; an unknown id gives an empty page.",
+            examples=["3fa85f64-5717-4562-b3fc-2c963f66afa6"],
+        ),
+    ] = None,
+) -> ExtractionPage:
+    """List extractions, newest first, one page at a time.
+
+    `status` and `template_id` narrow the list; a status given more than once matches any of them, and both
+    filters must match. `total` counts every match across all pages. A finished extraction whose result expired
+    is not listed, as `GET /v1/extractions/{extraction_id}` does not find it.
+    """
+    items, total = service.page(statuses=status or [], template_id=template_id, limit=page.limit, offset=page.offset)
+    return ExtractionPage(
+        items=[ExtractionResponse.from_domain(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
 
 
 @router.get(

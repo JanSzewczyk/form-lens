@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from formlens.extractions.domain.model import Extraction, ExtractionStatus, FailureReason
+from formlens.pagination import Page
 
 
 class ExtractionErrorResponse(BaseModel):
@@ -77,3 +78,7 @@ class ExtractionResponse(BaseModel):
             started_at=extraction.started_at,
             finished_at=extraction.finished_at,
         )
+
+
+class ExtractionPage(Page[ExtractionResponse]):
+    """One page of extractions."""

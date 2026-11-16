@@ -16,7 +16,7 @@ from formlens.extractions.domain.exceptions import (
 )
 from formlens.extractions.domain.model import ExtractionStatus
 from formlens.extractions.service_layer.service import utc_now
-from tests.extractions.factories import NOW, TEMPLATE_ID, TemplateSnapshotFactory
+from tests.extractions.factories import NOW, TEMPLATE_ID, ExtractionFactory, TemplateSnapshotFactory
 from tests.extractions.fakes import PDF
 from tests.extractions.harness import Harness
 
@@ -116,6 +116,46 @@ def test_a_finished_extraction_is_gone_once_its_time_to_live_has_passed_even_bef
     with pytest.raises(ExtractionNotFound):
         harness.service.get(extraction.id)
     assert harness.repository.get(extraction.id) is not None  # still stored: the purge has not run
+
+
+def test_a_page_drops_a_finished_extraction_at_its_time_to_live_and_counts_without_it() -> None:
+    harness = Harness()
+    finished_at = NOW - timedelta(hours=1)
+    old = ExtractionFactory.build(id=UUID(int=1), status=ExtractionStatus.COMPLETED, finished_at=finished_at)
+    harness.repository.add(old, b"", max_pending=10)
+    harness.clock.now = finished_at + harness.ttl - timedelta(microseconds=1)
+
+    before = harness.service.page(statuses=[], template_id=None, limit=10, offset=0)
+    harness.clock.now = finished_at + harness.ttl
+    after = harness.service.page(statuses=[], template_id=None, limit=10, offset=0)
+
+    assert before == ([old], 1)
+    assert after == ([], 0)
+
+
+def test_a_page_keeps_extractions_that_have_not_finished_however_old() -> None:
+    harness = Harness()
+    waiting = ExtractionFactory.build(id=UUID(int=1), created_at=NOW - timedelta(days=100))
+    harness.repository.add(waiting, b"", max_pending=10)
+
+    items, total = harness.service.page(statuses=[], template_id=None, limit=10, offset=0)
+
+    assert (items, total) == ([waiting], 1)
+
+
+def test_a_status_given_twice_is_the_same_as_given_once() -> None:
+    harness = Harness()
+    failed = ExtractionFactory.build(id=UUID(int=1), status=ExtractionStatus.FAILED, finished_at=NOW)
+    pending = ExtractionFactory.build(id=UUID(int=2))
+    for extraction in (failed, pending):
+        harness.repository.add(extraction, b"", max_pending=10)
+
+    twice = harness.service.page(
+        statuses=[ExtractionStatus.FAILED, ExtractionStatus.FAILED], template_id=None, limit=10, offset=0
+    )
+    once = harness.service.page(statuses=[ExtractionStatus.FAILED], template_id=None, limit=10, offset=0)
+
+    assert twice == once == ([failed], 1)
 
 
 def test_the_default_clock_is_aware_utc() -> None:

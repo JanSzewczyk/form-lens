@@ -21,7 +21,7 @@ FormLens API by Szum-Tech turns forms into structured data with models that run 
 document leaves it. IBM's Granite-Docling model, through [Docling](https://github.com/docling-project/docling),
 reads a PDF, PNG, JPEG or TIFF into text (`POST /v1/documents/parse`). **Stage 2 adds form templates and
 extraction**: you describe the fields of a form once (`/v1/templates`), upload a document with the template
-(`POST /v1/extractions`) and read the values back later (`GET /v1/extractions/{id}`). A local language model
+(`POST /v1/extractions`) and read the values back later (`GET /v1/extractions/{id}`, or `GET /v1/extractions` for a page of them). A local language model
 ([Ollama](https://ollama.com), `qwen3:8b` by default) fills in the fields from the text, one job at a time from a
 queue in the same process. Around it are typed settings, structured logging, one error format (Problem Details),
 a generated and checked OpenAPI contract, a pinned model download, SQLite with migrations, Docker and CI. It
@@ -55,7 +55,7 @@ curl -i -F "template_id=<id from the answer>" -F "file=@invoice.pdf" http://127.
 
 - **📄 Document parsing** — `POST /v1/documents/parse` runs Granite-Docling through Docling on this machine and returns `text`, `page_count`, `elapsed_ms` and `model`; the file type is read from its bytes, at most `MAX_CONCURRENCY` documents are read at once, and a busy service answers 503 with `Retry-After`
 - **🧩 Form templates** — `/v1/templates` creates, lists, reads, replaces and deletes the description of a form: fields of type `text`, `number`, `integer`, `boolean`, `date` or `choice`, with limits. Each template yields a JSON Schema (every field a required key that may be `null`), versions go up by one with every replacement, and a template that breaks a rule is a 422 `invalid-template`
-- **🔎 Field extraction** — `POST /v1/extractions` queues a document and answers 202 with a `Location`; one worker reads the text with Docling and asks a local Ollama model for the fields, and the answer is validated against the template's schema. The extraction keeps a copy of the template from the moment it was submitted
+- **🔎 Field extraction** — `POST /v1/extractions` queues a document and answers 202 with a `Location`; one worker reads the text with Docling and asks a local Ollama model for the fields, and the answer is validated against the template's schema. `GET /v1/extractions` lists them newest first, filtered by `status` and `template_id`. The extraction keeps a copy of the template from the moment it was submitted
 - **📥 A queue that says no** — at most `QUEUE_MAX_PENDING` extractions wait; one more is a 503 `queue-full` with `Retry-After`. A job runs at most `JOB_TIMEOUT_SECONDS`, is retried while attempts remain, and one that a restart interrupted is run again
 - **🩺 Health and readiness** — `GET /health` for liveness; `GET /health/ready` runs every registered check and answers a 503 problem that names the checks that failed
 - **🔧 Typed settings** — pydantic-settings reads the environment and `.env`, and the service refuses to start on an invalid value
@@ -342,6 +342,7 @@ nothing here measures the container's backend, so the constant stays.
 | `PUT` | `/v1/templates/{template_id}` | Replace a template (`replace_template`): the whole body again; the `version` goes up by one |
 | `DELETE` | `/v1/templates/{template_id}` | Delete a template (`delete_template`): 204; extractions already submitted keep their copy |
 | `POST` | `/v1/extractions` | Queue a document (`create_extraction`): multipart `file` and the form field `template_id`; **202** with a `Location` header and the extraction as `pending` |
+| `GET` | `/v1/extractions` | List extractions (`list_extractions`): newest first, with `limit` and `offset`; `status` (repeatable, any of them) and `template_id` (both must match) narrow it; `total` counts every match; a result past its time to live is not listed |
 | `GET` | `/v1/extractions/{extraction_id}` | Read an extraction (`get_extraction`): `status`, `result`, `error`, `missing_required`, the template id and version, timestamps |
 
 The spec is generated from the app into `openapi.json` by `make openapi` and committed; never edit

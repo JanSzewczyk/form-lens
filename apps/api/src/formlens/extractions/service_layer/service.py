@@ -1,14 +1,14 @@
 """Submit an extraction and read it back; knows nothing of HTTP, SQL or the model."""
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import structlog
 
 from formlens.extractions.domain.exceptions import ExtractionNotFound
-from formlens.extractions.domain.model import Extraction
+from formlens.extractions.domain.model import Extraction, ExtractionStatus
 from formlens.extractions.domain.ports import ExtractionRepository, TemplateCatalog, TextSource
 
 log = structlog.get_logger(__name__)
@@ -63,6 +63,22 @@ class ExtractionService:
             file_size_bytes=len(content),
         )
         return extraction
+
+    def page(
+        self, *, statuses: Collection[ExtractionStatus], template_id: UUID | None, limit: int, offset: int
+    ) -> tuple[list[Extraction], int]:
+        """Return one page of extractions, newest first, and the total that match.
+
+        Repeated statuses count once. A finished extraction past its time to live is left out of the page and of
+        the total, the same rule under which `get` does not find it.
+        """
+        return self._repository.page(
+            statuses=frozenset(statuses),
+            template_id=template_id,
+            finished_after=self._clock() - self._result_ttl,
+            limit=limit,
+            offset=offset,
+        )
 
     def get(self, extraction_id: UUID) -> Extraction:
         """Return the extraction; one that is past its time to live is gone, as if it were deleted.

@@ -21,7 +21,8 @@ FormLens API by Szum-Tech turns forms into structured data with models that run 
 document leaves it. IBM's Granite-Docling model, through [Docling](https://github.com/docling-project/docling),
 reads a PDF, PNG, JPEG or TIFF into text (`POST /v1/documents/parse`). **Stage 2 adds form templates and
 extraction**: you describe the fields of a form once (`/v1/templates`), upload a document with the template
-(`POST /v1/extractions`) and read the values back later (`GET /v1/extractions/{id}`, or `GET /v1/extractions` for a page of them). A local language model
+(`POST /v1/extractions`) and read the values back later (`GET /v1/extractions/{id}`, or `GET /v1/extractions`
+for a page of them). A local language model
 ([Ollama](https://ollama.com), `qwen3:8b` by default) fills in the fields from the text, one job at a time from a
 queue in the same process. Around it are typed settings, structured logging, one error format (Problem Details),
 a generated and checked OpenAPI contract, a pinned model download, SQLite with migrations, Docker and CI. It

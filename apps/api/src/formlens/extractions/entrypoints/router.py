@@ -104,10 +104,15 @@ def list_extractions(
         Query(
             description="Keep extractions in this status. Repeat the parameter to accept several: "
             "`?status=pending&status=running`. Omit it to keep every status.",
+            examples=["failed"],
         ),
     ] = None,
     template_id: Annotated[
-        UUID | None, Query(description="Keep extractions made with this template; an unknown id gives an empty page.")
+        UUID | None,
+        Query(
+            description="Keep extractions made with this template; an unknown id gives an empty page.",
+            examples=["3fa85f64-5717-4562-b3fc-2c963f66afa6"],
+        ),
     ] = None,
 ) -> ExtractionPage:
     """List extractions, newest first, one page at a time.

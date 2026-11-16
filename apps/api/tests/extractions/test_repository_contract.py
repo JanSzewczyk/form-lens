@@ -1,6 +1,6 @@
 """One suite, every repository: the fake and the SQLite adapter must behave the same wherever a test relies on it."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import UUID
 
 import pytest
@@ -8,7 +8,7 @@ import pytest
 from formlens.extractions.domain.exceptions import QueueFull
 from formlens.extractions.domain.model import Extraction, ExtractionStatus, FailureReason
 from formlens.extractions.domain.ports import ExtractionRepository
-from tests.extractions.factories import NOW, ExtractionFactory
+from tests.extractions.factories import NOW, TEMPLATE_ID, ExtractionFactory, TemplateSnapshotFactory
 
 CONTENT = b"%PDF-1.7 content of one upload"
 CAP = 100
@@ -357,3 +357,160 @@ def test_an_upload_of_any_bytes_is_stored_and_read_back_exactly(repository: Extr
     add(repository, ExtractionFactory.build(id=id_of(1)), content)
 
     assert repository.read_input(id_of(1)) == content
+
+
+# --- page ------------------------------------------------------------------------------------------
+
+EVERY_TIME = NOW - timedelta(days=3650)  # a cutoff nothing is older than
+OTHER_TEMPLATE_ID = UUID(int=0xDEF)
+
+
+def stored(
+    repository: ExtractionRepository,
+    n: int,
+    *,
+    status: ExtractionStatus = ExtractionStatus.PENDING,
+    template_id: UUID = TEMPLATE_ID,
+    created_at: datetime = NOW,
+    finished_at: datetime | None = None,
+) -> Extraction:
+    """Store extraction number `n` as it is given; a finished one needs `finished_at`."""
+    return add(
+        repository,
+        ExtractionFactory.build(
+            id=id_of(n),
+            status=status,
+            template=TemplateSnapshotFactory.build(template_id=template_id),
+            created_at=created_at,
+            finished_at=finished_at,
+        ),
+    )
+
+
+def page_ids(
+    repository: ExtractionRepository,
+    *,
+    statuses: frozenset[ExtractionStatus] = frozenset(),
+    template_id: UUID | None = None,
+    finished_after: datetime = EVERY_TIME,
+    limit: int = 100,
+    offset: int = 0,
+) -> tuple[list[UUID], int]:
+    items, total = repository.page(
+        statuses=statuses, template_id=template_id, finished_after=finished_after, limit=limit, offset=offset
+    )
+    return [item.id for item in items], total
+
+
+def test_a_page_is_newest_first_and_the_id_breaks_a_tie_in_descending_order(repository: ExtractionRepository) -> None:
+    stored(repository, 1, created_at=NOW)
+    stored(repository, 2, created_at=NOW + timedelta(seconds=10))
+    stored(repository, 3, created_at=NOW + timedelta(seconds=5))
+    stored(repository, 4, created_at=NOW + timedelta(seconds=5))
+
+    ids, total = page_ids(repository)
+
+    assert ids == [id_of(2), id_of(4), id_of(3), id_of(1)]
+    assert total == 4
+
+
+def test_pages_cut_a_list_with_equal_creation_times_without_a_gap_or_a_repeat(repository: ExtractionRepository) -> None:
+    for n in range(1, 6):
+        stored(repository, n)
+
+    first, total = page_ids(repository, limit=2, offset=0)
+    second, _ = page_ids(repository, limit=2, offset=2)
+    third, _ = page_ids(repository, limit=2, offset=4)
+
+    assert first + second + third == [id_of(n) for n in (5, 4, 3, 2, 1)]
+    assert total == 5
+
+
+def test_a_page_returns_the_extraction_as_it_was_stored(repository: ExtractionRepository) -> None:
+    done = stored(repository, 1, status=ExtractionStatus.COMPLETED, finished_at=NOW)
+
+    items, _ = repository.page(statuses=frozenset(), template_id=None, finished_after=EVERY_TIME, limit=10, offset=0)
+
+    assert items == [done]
+
+
+def test_an_empty_store_gives_an_empty_page_and_a_total_of_zero(repository: ExtractionRepository) -> None:
+    assert page_ids(repository) == ([], 0)
+
+
+def test_an_offset_past_the_end_gives_no_items_and_the_real_total(repository: ExtractionRepository) -> None:
+    for n in range(1, 4):
+        stored(repository, n)
+
+    assert page_ids(repository, limit=10, offset=50) == ([], 3)
+
+
+def test_the_statuses_are_combined_with_or_and_no_status_means_all(repository: ExtractionRepository) -> None:
+    stored(repository, 1, status=ExtractionStatus.PENDING, created_at=NOW)
+    stored(repository, 2, status=ExtractionStatus.RUNNING, created_at=NOW + timedelta(seconds=1))
+    stored(repository, 3, status=ExtractionStatus.COMPLETED, created_at=NOW + timedelta(seconds=2), finished_at=NOW)
+    stored(repository, 4, status=ExtractionStatus.FAILED, created_at=NOW + timedelta(seconds=3), finished_at=NOW)
+
+    one = page_ids(repository, statuses=frozenset({ExtractionStatus.FAILED}))
+    two = page_ids(repository, statuses=frozenset({ExtractionStatus.PENDING, ExtractionStatus.RUNNING}))
+    every = page_ids(repository)
+
+    assert one == ([id_of(4)], 1)
+    assert two == ([id_of(2), id_of(1)], 2)
+    assert every == ([id_of(4), id_of(3), id_of(2), id_of(1)], 4)
+
+
+def test_the_template_filter_keeps_only_that_templates_extractions(repository: ExtractionRepository) -> None:
+    stored(repository, 1, template_id=TEMPLATE_ID)
+    stored(repository, 2, template_id=OTHER_TEMPLATE_ID)
+    stored(repository, 3, template_id=TEMPLATE_ID)
+
+    assert page_ids(repository, template_id=OTHER_TEMPLATE_ID) == ([id_of(2)], 1)
+    assert page_ids(repository, template_id=UUID(int=0x999)) == ([], 0)
+
+
+def test_status_and_template_are_combined_with_and(repository: ExtractionRepository) -> None:
+    stored(repository, 1, template_id=TEMPLATE_ID, status=ExtractionStatus.FAILED, finished_at=NOW)
+    stored(repository, 2, template_id=OTHER_TEMPLATE_ID, status=ExtractionStatus.FAILED, finished_at=NOW)
+    stored(repository, 3, template_id=TEMPLATE_ID, status=ExtractionStatus.PENDING)
+
+    ids, total = page_ids(repository, statuses=frozenset({ExtractionStatus.FAILED}), template_id=TEMPLATE_ID)
+
+    assert (ids, total) == ([id_of(1)], 1)
+
+
+def test_the_total_counts_every_match_across_pages_not_the_page(repository: ExtractionRepository) -> None:
+    for n in range(1, 8):
+        stored(repository, n, template_id=TEMPLATE_ID if n <= 5 else OTHER_TEMPLATE_ID)
+
+    ids, total = page_ids(repository, template_id=TEMPLATE_ID, limit=2, offset=1)
+
+    assert (ids, total) == ([id_of(4), id_of(3)], 5)
+
+
+def test_a_finished_extraction_at_the_cutoff_is_excluded_and_one_a_moment_later_is_kept(
+    repository: ExtractionRepository,
+) -> None:
+    cutoff = NOW + timedelta(hours=1)
+    stored(repository, 1, status=ExtractionStatus.COMPLETED, finished_at=cutoff - timedelta(microseconds=1))
+    stored(repository, 2, status=ExtractionStatus.COMPLETED, finished_at=cutoff)
+    stored(repository, 3, status=ExtractionStatus.FAILED, finished_at=cutoff + timedelta(microseconds=1))
+
+    assert page_ids(repository, finished_after=cutoff) == ([id_of(3)], 1)
+
+
+def test_an_extraction_that_has_not_finished_never_expires(repository: ExtractionRepository) -> None:
+    stored(repository, 1, status=ExtractionStatus.PENDING, created_at=NOW - timedelta(days=400))
+    stored(repository, 2, status=ExtractionStatus.RUNNING, created_at=NOW - timedelta(days=400))
+
+    assert page_ids(repository, finished_after=NOW + timedelta(days=1000)) == ([id_of(2), id_of(1)], 2)
+
+
+def test_an_expired_extraction_is_not_counted_with_the_filters(repository: ExtractionRepository) -> None:
+    cutoff = NOW
+    stored(repository, 1, status=ExtractionStatus.COMPLETED, finished_at=cutoff - timedelta(hours=1))
+    stored(repository, 2, status=ExtractionStatus.COMPLETED, finished_at=cutoff + timedelta(hours=1))
+
+    ids, total = page_ids(repository, statuses=frozenset({ExtractionStatus.COMPLETED}), finished_after=cutoff)
+
+    assert (ids, total) == ([id_of(2)], 1)

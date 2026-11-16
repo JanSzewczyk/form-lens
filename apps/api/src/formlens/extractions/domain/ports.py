@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
 
-from formlens.extractions.domain.model import Extraction, RecoveryCounts, TemplateSnapshot
+from formlens.extractions.domain.model import Extraction, ExtractionStatus, RecoveryCounts, TemplateSnapshot
 
 
 class ExtractionRepository(Protocol):
@@ -25,6 +25,24 @@ class ExtractionRepository(Protocol):
 
     def get(self, extraction_id: UUID) -> Extraction | None:
         """Return the extraction, or None."""
+        ...
+
+    def page(
+        self,
+        *,
+        statuses: frozenset[ExtractionStatus],
+        template_id: UUID | None,
+        finished_after: datetime,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[Extraction], int]:
+        """Return one page, newest first, and how many extractions match across all pages.
+
+        An empty `statuses` keeps every status; otherwise an extraction matches one of them. `template_id`, when
+        given, must match too. An extraction that finished at or before `finished_after` is left out of the page
+        and of the total; one that has not finished is never left out. The id breaks a tie between two
+        extractions created at the same time.
+        """
         ...
 
     def read_input(self, extraction_id: UUID) -> bytes | None:

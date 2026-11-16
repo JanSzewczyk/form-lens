@@ -1,7 +1,7 @@
 # Feature: List Extractions With Pagination And Filters
 
 **Branch:** feature/list-extractions-pagination-filters
-**Status:** planned  <!-- draft → clarified → planned → in-progress → done; each /sdd command advances it -->
+**Status:** done  <!-- draft → clarified → planned → in-progress → done; each /sdd command advances it -->
 **Type:** feat  <!-- feat | fix | chore | refactor | docs -->
 **Owner:** JanSzewczyk
 **Created:** 2026-11-15
@@ -31,19 +31,19 @@ They need one paged list of extractions, filterable by status and template, to s
 
 ## Acceptance criteria
 
-- [ ] AC1: given 3 stored extractions → `GET /v1/extractions` returns 200 with all 3 items, newest first, and `total` = 3.
-- [ ] AC2: given 0 stored extractions → 200 with `items` = [] and `total` = 0.
-- [ ] AC3: given 25 extractions and `limit=10&offset=20` → 5 items, `total` = 25, `limit` = 10, `offset` = 20.
-- [ ] AC4: given extractions in `pending` and `failed` and `status=failed` → only the failed ones, and `total` counts only them.
-- [ ] AC5: given extractions of templates A and B and `template_id=<A>` → only the extractions of A.
-- [ ] AC6: given `status=failed&template_id=<A>` → only failed extractions of A.
-- [ ] AC7: given `status=unknown` → 422 Problem Details.
-- [ ] AC8: given `template_id=not-a-uuid` → 422 Problem Details.
-- [ ] AC9: given `limit=0` or `limit=101` → 422 Problem Details (shared pagination rules).
-- [ ] AC10: each item has the same shape as the response of `GET /v1/extractions/{extraction_id}`.
-- [ ] AC11: `apps/api/openapi.json` and `packages/api-client/src/generated` contain `list_extractions`; `make check` and `generate:check` pass.
-- [ ] AC12: given extractions in `pending`, `running`, `completed` and `failed` and `status=pending&status=running` → only the pending and running ones, and `total` counts only them.
-- [ ] AC13: given a completed extraction whose `finished_at` is older than the TTL and one finished within the TTL → only the second is listed, and `total` = 1.
+- [x] AC1: given 3 stored extractions → `GET /v1/extractions` returns 200 with all 3 items, newest first, and `total` = 3.
+- [x] AC2: given 0 stored extractions → 200 with `items` = [] and `total` = 0.
+- [x] AC3: given 25 extractions and `limit=10&offset=20` → 5 items, `total` = 25, `limit` = 10, `offset` = 20.
+- [x] AC4: given extractions in `pending` and `failed` and `status=failed` → only the failed ones, and `total` counts only them.
+- [x] AC5: given extractions of templates A and B and `template_id=<A>` → only the extractions of A.
+- [x] AC6: given `status=failed&template_id=<A>` → only failed extractions of A.
+- [x] AC7: given `status=unknown` → 422 Problem Details.
+- [x] AC8: given `template_id=not-a-uuid` → 422 Problem Details.
+- [x] AC9: given `limit=0` or `limit=101` → 422 Problem Details (shared pagination rules).
+- [x] AC10: each item has the same shape as the response of `GET /v1/extractions/{extraction_id}`.
+- [x] AC11: `apps/api/openapi.json` and `packages/api-client/src/generated` contain `list_extractions`; `make check` and `generate:check` pass.
+- [x] AC12: given extractions in `pending`, `running`, `completed` and `failed` and `status=pending&status=running` → only the pending and running ones, and `total` counts only them.
+- [x] AC13: given a completed extraction whose `finished_at` is older than the TTL and one finished within the TTL → only the second is listed, and `total` = 1.
 
 ## Edge cases
 

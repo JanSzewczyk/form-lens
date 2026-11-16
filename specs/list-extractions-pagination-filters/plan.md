@@ -1,7 +1,7 @@
 # Plan: List Extractions With Pagination And Filters
 
 **Spec:** `specs/list-extractions-pagination-filters/spec.md`
-**Status:** tasks-ready
+**Status:** done
 
 ## High-level approach
 

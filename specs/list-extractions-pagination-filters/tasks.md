@@ -8,7 +8,7 @@
 
 ### T1: `GET /v1/extractions` with status/template filters, paging and expiry
 project: api
-status: draft
+status: done
 depends_on: []
 acceptance: AC1, AC2, AC3, AC4, AC5, AC6, AC7, AC8, AC9, AC10, AC11, AC12, AC13
 plan: High-level approach; Contracts (Port, HTTP); File-by-file change list → api; Risks (expiry drift, `reject_repeated_query_parameters`, Schemathesis)
@@ -27,7 +27,7 @@ notes: `openapi.json` is generated, never edited by hand. Fix `query.py` only if
 
 ### T2: Regenerate the api-client with `listExtractions`
 project: @form-lens/api-client
-status: draft
+status: done
 depends_on: [T1]
 acceptance: AC11, AC12
 plan: Contracts (Generated client); File-by-file change list → @form-lens/api-client; Risks (Orval array serialization)

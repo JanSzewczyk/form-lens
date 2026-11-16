@@ -14,6 +14,7 @@
 export * from './bodyCreateExtraction';
 export * from './bodyParseDocument';
 export * from './extractionErrorResponse';
+export * from './extractionPage';
 export * from './extractionResponse';
 export * from './extractionResponseResult';
 export * from './extractionStatus';
@@ -21,6 +22,7 @@ export * from './failureReason';
 export * from './fieldSpec';
 export * from './fieldType';
 export * from './healthResponse';
+export * from './listExtractionsParams';
 export * from './listTemplatesParams';
 export * from './outputFormat';
 export * from './parseDocumentParams';

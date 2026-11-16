@@ -12,11 +12,75 @@
  */
 import type {
   BodyCreateExtraction,
+  ExtractionPage,
   ExtractionResponse,
+  ListExtractionsParams,
   ProblemDetail
 } from '../model';
 
 import { customFetch } from '../../fetcher';
+
+export type listExtractionsResponse200 = {
+  data: ExtractionPage
+  status: 200
+}
+
+export type listExtractionsResponse422 = {
+  data: ProblemDetail
+  status: 422
+}
+
+export type listExtractionsResponseSuccess = (listExtractionsResponse200) & {
+  headers: Headers;
+};
+export type listExtractionsResponseError = (listExtractionsResponse422) & {
+  headers: Headers;
+};
+
+export type listExtractionsResponse = (listExtractionsResponseSuccess | listExtractionsResponseError)
+
+export const getListExtractionsUrl = (params?: ListExtractionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    const explodeParameters = ["status"];
+
+    if (Array.isArray(value) && explodeParameters.includes(key)) {
+      value.forEach((v) => {
+        normalizedParams.append(key, v === null ? 'null' : String(v));
+      });
+      return;
+    }
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/extractions?${stringifiedParams}` : `/v1/extractions`
+}
+
+/**
+ * List extractions, newest first, one page at a time.
+ *
+ * `status` and `template_id` narrow the list; a status given more than once matches any of them, and both
+ * filters must match. `total` counts every match across all pages. A finished extraction whose result expired
+ * is not listed, as `GET /v1/extractions/{extraction_id}` does not find it.
+ * @summary List Extractions
+ */
+export const listExtractions = async (params?: ListExtractionsParams, options?: Parameters<typeof customFetch>[1]): Promise<listExtractionsResponse> => {
+
+  return customFetch<listExtractionsResponse>(getListExtractionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
 
 export type createExtractionResponse202 = {
   data: ExtractionResponse

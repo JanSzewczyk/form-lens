@@ -57,6 +57,8 @@ export const getListTemplatesUrl = (params?: ListTemplatesParams,) => {
 
 /**
  * List templates, oldest first, one page at a time.
+ *
+ * `search` narrows the list to the templates whose name contains it; `total` counts only those.
  * @summary List Templates
  */
 export const listTemplates = async (params?: ListTemplatesParams, options?: Parameters<typeof customFetch>[1]): Promise<listTemplatesResponse> => {

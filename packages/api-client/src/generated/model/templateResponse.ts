@@ -27,6 +27,8 @@ export interface TemplateResponse {
   id: string;
   /** The JSON Schema every extraction with this template must satisfy: one required key per field, each of which may be `null`. */
   json_schema: TemplateResponseJsonSchema;
+  /** When the newest extraction with this template was created (UTC); `null` when none was. Replacing the template does not change it. */
+  last_used_at: string | null;
   /** Name of the form. */
   name: string;
   /** When the template was last replaced (UTC). */

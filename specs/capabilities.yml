@@ -21,7 +21,7 @@ implementation:
   default: in-session         # who implements a task: skill:<name> | agent:<name> | command:<shell> | in-session
   projects:                   # per project, e.g. `api: agent:python-developer`
     api: skill:python:run-python-task
-    "@form-lens/studio": in-session
+    "@form-lens/studio": skill:nextjs:run-nextjs-task
   isolation:                  # each task in its own sub-session, worktree and branch
     worktree:
       merge: pr               # pr: a PR per task, a human merges | auto: rebase + fast-forward
@@ -39,7 +39,7 @@ review:
   projects:                   # per project, e.g. `web: skill:react-review`
     api: agent:python:python-reviewer
     "@form-lens/studio": agent:nextjs:code-reviewer
-  checks: []                  # run on every review, e.g. [agent:qa]
+  checks: [agent:testing:qa-engineer]   # run on every review, e.g. [agent:qa]
   ci: on                      # on | off: the sdd-check GitHub workflow (/sdd:doctor init asks)
 
 generated:                    # globs left out of every diff and never flagged

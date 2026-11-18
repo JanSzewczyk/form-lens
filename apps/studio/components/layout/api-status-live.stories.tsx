@@ -1,3 +1,4 @@
+import * as React from "react";
 import { expect, fn, waitFor } from "storybook/test";
 import preview from "~/.storybook/preview";
 import type { ApiHealth } from "~/lib/api-health-types";
@@ -8,6 +9,7 @@ const STATUS_ENDPOINT = "/api/formlens-status";
 const CONNECTED: ApiHealth = { host: "localhost:8000", status: "connected" };
 const UNAVAILABLE: ApiHealth = { host: "localhost:8000", status: "unavailable" };
 const FAST_INTERVAL_MS = 30;
+const DEFAULT_INTERVAL_MS = 60_000;
 const SETTLE_MS = 300;
 
 const fetchMock = fn<typeof fetch>();
@@ -30,6 +32,54 @@ function setTabHidden(isHidden: boolean) {
 
 function settle() {
   return new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
+}
+
+/** Timers of the default interval that were started and not yet cleared; the test cannot wait 60 s, so it counts them. */
+const defaultIntervalStarts: Array<number> = [];
+const liveDefaultIntervals = new Set<number>();
+
+function spyOnDefaultInterval() {
+  const realSetInterval = window.setInterval;
+  const realClearInterval = window.clearInterval;
+  defaultIntervalStarts.length = 0;
+  liveDefaultIntervals.clear();
+
+  window.setInterval = ((handler: TimerHandler, delay?: number, ...args: Array<unknown>) => {
+    const id = realSetInterval(handler, delay, ...args);
+    if (delay === DEFAULT_INTERVAL_MS) {
+      defaultIntervalStarts.push(delay);
+      liveDefaultIntervals.add(id);
+    }
+    return id;
+  }) as typeof window.setInterval;
+  window.clearInterval = ((id?: number) => {
+    if (id !== undefined) {
+      liveDefaultIntervals.delete(id);
+    }
+    realClearInterval(id);
+  }) as typeof window.clearInterval;
+
+  return () => {
+    window.setInterval = realSetInterval;
+    window.clearInterval = realClearInterval;
+  };
+}
+
+function answerEveryCheckWith(makeResponse: () => Promise<Response>) {
+  fetchMock.mockImplementation(makeResponse);
+}
+
+function RemovableStatus(props: React.ComponentProps<typeof ApiStatusLive>) {
+  const [isShown, setIsShown] = React.useState(true);
+
+  return (
+    <>
+      {isShown ? <ApiStatusLive {...props} /> : null}
+      <button onClick={() => setIsShown(false)} type="button">
+        Remove status
+      </button>
+    </>
+  );
 }
 
 const meta = preview.meta({
@@ -162,4 +212,145 @@ TabHiddenLongInterval.test("Checks once, right away, when the tab becomes visibl
   answerNext({ host: "localhost:8000", status: "unavailable" });
   await expect(await canvas.findByText("API unavailable")).toBeVisible();
   await expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+PollingFlipsTheStatus.test(
+  "Treats a failed request to the Studio route as unavailable and keeps the host",
+  async ({ canvas }) => {
+    answerEveryCheckWith(() => Promise.reject(new TypeError("Failed to fetch")));
+
+    await expect(await canvas.findByText("API unavailable")).toBeVisible();
+    await expect(canvas.getByText("localhost:8000")).toBeVisible();
+  }
+);
+
+PollingFlipsTheStatus.test("Treats an answer that is not the status shape as unavailable", async ({ canvas }) => {
+  answerEveryCheckWith(() => Promise.resolve(Response.json({ status: "weird" })));
+
+  await expect(await canvas.findByText("API unavailable")).toBeVisible();
+  await expect(canvas.getByText("localhost:8000")).toBeVisible();
+});
+
+PollingFlipsTheStatus.test("Does not trust a connected answer that names no host", async ({ canvas }) => {
+  answerEveryCheckWith(() => Promise.resolve(Response.json({ status: "connected" })));
+
+  await expect(await canvas.findByText("API unavailable")).toBeVisible();
+});
+
+PollingFlipsTheStatus.test("Treats a 200 answer that is not JSON as unavailable", async ({ canvas }) => {
+  answerEveryCheckWith(() => Promise.resolve(new Response("<html>gateway</html>", { status: 200 })));
+
+  await expect(await canvas.findByText("API unavailable")).toBeVisible();
+});
+
+PollingFlipsTheStatus.test("Shows the host of the latest answer", async ({ canvas }) => {
+  answerEveryCheckWith(() => Promise.resolve(Response.json({ host: "api.other:9000", status: "connected" })));
+
+  await expect(await canvas.findByText("api.other:9000")).toBeVisible();
+  await expect(canvas.getByText("API connected")).toBeVisible();
+});
+
+PollingFlipsTheStatus.test("Only ever fetches the Studio route, never the API itself", async () => {
+  await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2));
+
+  const urls = fetchMock.mock.calls.map(([input]) => String(input));
+  for (const url of urls) {
+    await expect(url).toBe(STATUS_ENDPOINT);
+  }
+});
+
+export const LongHost = meta.story({
+  args: { initial: { host: "a-very-long-hostname.internal.example.com:8000", status: "connected" } }
+});
+
+LongHost.test("Keeps a long host inside the navigation, with the full host in its title", async ({ canvas }) => {
+  const host = canvas.getByText("a-very-long-hostname.internal.example.com:8000");
+  const sidebarWidth = host.closest("div.bg-sidebar");
+
+  await expect(host).toHaveAttribute("title", "a-very-long-hostname.internal.example.com:8000");
+  await expect(sidebarWidth).not.toBeNull();
+  await expect(sidebarWidth?.scrollWidth).toBeLessThanOrEqual(sidebarWidth?.clientWidth ?? 0);
+});
+
+export const DefaultInterval = meta.story({
+  beforeEach: spyOnDefaultInterval
+});
+
+DefaultInterval.test("Checks every 60 s when no interval is given, and not on mount", async () => {
+  await expect(defaultIntervalStarts).toEqual([DEFAULT_INTERVAL_MS]);
+  await settle();
+  await expect(fetchMock).not.toHaveBeenCalled();
+});
+
+export const DefaultIntervalTabHidden = meta.story({
+  beforeEach: () => {
+    stubTabHidden(true);
+    return spyOnDefaultInterval();
+  }
+});
+
+DefaultIntervalTabHidden.test("Starts no timer while the tab is hidden", async () => {
+  await expect(liveDefaultIntervals.size).toBe(0);
+});
+
+DefaultIntervalTabHidden.test(
+  "Checks once per time the tab becomes visible, and never holds more than one timer",
+  async () => {
+    setTabHidden(false);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await expect(liveDefaultIntervals.size).toBe(1);
+
+    setTabHidden(true);
+    await expect(liveDefaultIntervals.size).toBe(0);
+
+    setTabHidden(false);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await expect(liveDefaultIntervals.size).toBe(1);
+
+    await settle();
+    await expect(fetchMock).toHaveBeenCalledTimes(2);
+  }
+);
+
+DefaultIntervalTabHidden.test("A visibilitychange while the tab is still hidden checks nothing", async () => {
+  setTabHidden(true);
+  setTabHidden(true);
+  await settle();
+
+  await expect(fetchMock).not.toHaveBeenCalled();
+  await expect(liveDefaultIntervals.size).toBe(0);
+});
+
+export const Removable = meta.story({
+  args: { intervalMs: FAST_INTERVAL_MS },
+  render: (args) => <RemovableStatus {...args} />
+});
+
+Removable.test(
+  "Stops polling, aborts the request in flight and drops its listener when removed",
+  async ({ canvas, userEvent }) => {
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const signal = fetchMock.mock.calls[0]?.[1]?.signal;
+
+    await userEvent.click(canvas.getByRole("button", { name: /remove status/i }));
+    await expect(canvas.queryByRole("status")).not.toBeInTheDocument();
+    await expect(signal?.aborted).toBe(true);
+
+    fetchMock.mockClear();
+    setTabHidden(true);
+    setTabHidden(false);
+    await settle();
+
+    await expect(fetchMock).not.toHaveBeenCalled();
+  }
+);
+
+DefaultIntervalTabHidden.test("A second visibilitychange while visible does not start a second timer", async () => {
+  setTabHidden(false);
+  await waitFor(() => expect(liveDefaultIntervals.size).toBe(1));
+
+  setTabHidden(false);
+  await settle();
+
+  await expect(liveDefaultIntervals.size).toBe(1);
 });

@@ -161,3 +161,49 @@ PhoneWidth.test("Closes the sheet when a link is chosen", async ({ canvas, userE
 
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
 });
+
+FormsSection.test("Lists exactly three sections, in the design's order", async ({ canvasElement }) => {
+  const links = canvasElement.querySelectorAll('nav[aria-label="Main navigation"] a');
+
+  await expect(Array.from(links).map((link) => link.textContent)).toEqual(["Forms", "New document", "Jobs"]);
+});
+
+FormsSection.test("Shows the Form Lens logo as a link to Forms", async ({ canvas }) => {
+  await expect(canvas.getByRole("link", { name: /form lens/i })).toHaveAttribute("href", "/forms");
+});
+
+FormsSection.test(
+  "Hides the navigation off screen when collapsed and brings it back",
+  async ({ canvas, userEvent }) => {
+    const toggle = canvas.getByRole("button", { name: /toggle sidebar/i });
+    const nav = canvas.getByRole("navigation", { name: /main navigation/i });
+
+    await userEvent.click(toggle);
+    await waitFor(() => expect(nav.getBoundingClientRect().right).toBeLessThanOrEqual(0));
+
+    await userEvent.click(toggle);
+    await waitFor(() => expect(nav.getBoundingClientRect().left).toBeGreaterThanOrEqual(0));
+    await expect(nav).toBeVisible();
+  }
+);
+
+export const OutsideEverySection = FormsSection.extend({
+  name: "Outside every section",
+  parameters: { nextjs: { navigation: { pathname: "/" } } }
+});
+
+OutsideEverySection.test("Marks no section as current", async ({ canvasElement }) => {
+  await expect(canvasElement.querySelectorAll('nav[aria-label="Main navigation"] a[aria-current]')).toHaveLength(0);
+});
+
+export const SiblingOfAnAddressedSection = FormsSection.extend({
+  name: "Sibling path of Forms",
+  parameters: { nextjs: { navigation: { pathname: "/formsets" } } }
+});
+
+SiblingOfAnAddressedSection.test(
+  "Does not mark Forms current for a path that only starts with it",
+  async ({ canvasElement }) => {
+    await expect(canvasElement.querySelectorAll('nav[aria-label="Main navigation"] a[aria-current]')).toHaveLength(0);
+  }
+);

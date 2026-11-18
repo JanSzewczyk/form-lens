@@ -27,3 +27,17 @@ JobsPlaceholder.test("Names the section and says it is coming soon", async ({ ca
   await expect(canvas.getByText("Coming soon")).toBeVisible();
   await expect(canvas.getByText("Tracking extraction jobs is not available yet.")).toBeVisible();
 });
+
+export const NewDocumentPlaceholder = meta.story({
+  args: {
+    description: "Uploading a document for extraction is not available yet.",
+    section: "New document"
+  },
+  name: "New document placeholder"
+});
+
+NewDocumentPlaceholder.test("Names New document and says it is coming soon", async ({ canvas }) => {
+  await expect(canvas.getByRole("heading", { level: 1, name: "New document" })).toBeVisible();
+  await expect(canvas.getByText("Coming soon")).toBeVisible();
+  await expect(canvas.getByText("Uploading a document for extraction is not available yet.")).toBeVisible();
+});

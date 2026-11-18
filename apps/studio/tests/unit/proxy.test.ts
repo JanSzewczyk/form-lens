@@ -5,6 +5,7 @@ import { proxy } from "~/proxy";
 
 vi.mock("~/lib/logger", () => {
   const mockLogger = {
+    debug: vi.fn(),
     info: vi.fn(),
     withMetadata: vi.fn()
   };
@@ -17,7 +18,7 @@ vi.mock("~/lib/logger", () => {
 
 describe("proxy", () => {
   beforeEach(() => {
-    vi.mocked(createLogger).mockClear();
+    vi.clearAllMocks();
   });
 
   it("creates a request-scoped logger with method, url and userAgent", () => {
@@ -58,5 +59,16 @@ describe("proxy", () => {
 
     expect(requestId).toBeTruthy();
     expect(createLogger).toHaveBeenCalledWith(expect.objectContaining({ requestId }));
+  });
+
+  it("logs the polled /api/formlens-status request at debug, not at info", () => {
+    const request = new NextRequest("https://example.com/api/formlens-status", { method: "GET" });
+
+    proxy(request);
+
+    const requestLogger = vi.mocked(createLogger).mock.results[0]?.value;
+    expect(requestLogger.info).not.toHaveBeenCalled();
+    expect(requestLogger.debug).toHaveBeenCalledWith("Incoming request");
+    expect(requestLogger.debug).toHaveBeenCalledWith("Request completed");
   });
 });

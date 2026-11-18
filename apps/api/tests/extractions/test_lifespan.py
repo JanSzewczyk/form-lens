@@ -20,7 +20,7 @@ from formlens.extractions.adapters.sqlite_repository import SqliteExtractionRepo
 from formlens.extractions.domain.model import ExtractionStatus
 from formlens.extractions.entrypoints.worker import ExtractionWorker
 from formlens.main import create_app
-from formlens.migrations import DatabaseNotAtHead
+from formlens.migrations import DatabaseNotAtHead, head_revision
 from formlens.parsing.exceptions import ParserBusy
 from tests.conftest import make_settings
 from tests.documents import sample
@@ -92,7 +92,7 @@ def test_a_database_that_is_not_migrated_stops_the_start_with_a_hint_before_the_
         for x in capsys.readouterr().out.splitlines()
         if x.startswith("{") and "database_not_migrated" in x
     ]
-    assert (line["level"], line["current"], line["head"]) == ("error", None, "0001")
+    assert (line["level"], line["current"], line["head"]) == ("error", None, head_revision())
     assert "make migrate" in line["hint"]
     assert loaded == []  # checked first: a missing migration is known before the model has loaded
 

@@ -208,9 +208,13 @@ class FakeTemplateCatalog:
 
     def __init__(self, *snapshots: TemplateSnapshot) -> None:
         self.snapshots = {snapshot.template_id: snapshot for snapshot in snapshots}
+        self.marked: list[tuple[UUID, datetime]] = []  # every `mark_used` call, in order
 
     def snapshot(self, template_id: UUID) -> TemplateSnapshot:
         try:
             return self.snapshots[template_id]
         except KeyError:
             raise TemplateMissing(template_id) from None
+
+    def mark_used(self, template_id: UUID, at: datetime) -> None:
+        self.marked.append((template_id, at))

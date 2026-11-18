@@ -1,5 +1,6 @@
 """The extractions' view of the templates: ids in, a plain copy out."""
 
+from datetime import datetime
 from uuid import UUID
 
 from formlens.extractions.domain.exceptions import TemplateMissing
@@ -34,3 +35,7 @@ class TemplateServiceCatalog:
             ),
             json_schema=build_json_schema(template.fields),
         )
+
+    def mark_used(self, template_id: UUID, at: datetime) -> None:
+        """Tell the templates module that an extraction was created at `at`."""
+        self._service.mark_used(template_id, at)

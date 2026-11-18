@@ -36,6 +36,47 @@ def test_a_submitted_document_is_queued_as_pending_with_a_copy_of_the_template()
     assert extraction.id.version == 7
 
 
+def test_a_queued_document_marks_the_template_as_used_at_the_extractions_creation_time() -> None:
+    harness = Harness()
+
+    extraction = harness.service.submit(PDF, TEMPLATE_ID)
+
+    assert harness.catalog.marked == [(TEMPLATE_ID, extraction.created_at)]
+    assert extraction.created_at == NOW
+
+
+def test_every_submission_marks_the_template_again() -> None:
+    harness = Harness()
+
+    harness.submit()
+    second = harness.submit()
+
+    assert [at for _, at in harness.catalog.marked] == [NOW, second.created_at]
+
+
+def test_a_template_is_not_marked_when_the_queue_refuses_the_document() -> None:
+    harness = Harness(max_pending=1)
+    harness.submit()
+    marked_before = list(harness.catalog.marked)
+
+    with pytest.raises(QueueFull):
+        harness.submit()
+
+    assert marked_before == [(TEMPLATE_ID, NOW)]
+    assert harness.catalog.marked == marked_before
+
+
+def test_a_template_is_not_marked_when_the_upload_or_the_template_is_refused() -> None:
+    harness = Harness()
+
+    with pytest.raises(UploadEmpty):
+        harness.service.submit(b"", TEMPLATE_ID)
+    with pytest.raises(TemplateMissing):
+        harness.service.submit(PDF, UUID(int=999))
+
+    assert harness.catalog.marked == []
+
+
 def test_the_copy_does_not_change_when_the_template_does() -> None:
     harness = Harness()
     extraction = harness.service.submit(PDF, TEMPLATE_ID)

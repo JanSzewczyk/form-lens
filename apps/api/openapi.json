@@ -764,6 +764,22 @@
             "title": "Json Schema",
             "type": "object"
           },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the newest extraction with this template was created (UTC); `null` when none was. Replacing the template does not change it.",
+            "examples": [
+              "2026-01-15T09:30:00Z"
+            ],
+            "title": "Last Used At"
+          },
           "name": {
             "description": "Name of the form.",
             "examples": [
@@ -796,7 +812,8 @@
           "fields",
           "json_schema",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "last_used_at"
         ],
         "title": "TemplateResponse",
         "type": "object"
@@ -1326,9 +1343,31 @@
     },
     "/v1/templates": {
       "get": {
-        "description": "List templates, oldest first, one page at a time.",
+        "description": "List templates, oldest first, one page at a time.\n\n`search` narrows the list to the templates whose name contains it; `total` counts only those.",
         "operationId": "list_templates",
         "parameters": [
+          {
+            "description": "Keep templates whose name contains this text, ignoring case (ASCII letters). `%` and `_` are taken literally. Omit it to keep every template.",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep templates whose name contains this text, ignoring case (ASCII letters). `%` and `_` are taken literally. Omit it to keep every template.",
+              "examples": [
+                "inv"
+              ],
+              "title": "Search"
+            }
+          },
           {
             "description": "Items per page, 1 to 100. Defaults to the configured page size (20 unless DEFAULT_PAGE_SIZE is set).",
             "in": "query",

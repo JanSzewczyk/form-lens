@@ -172,6 +172,11 @@ class TemplateResponse(BaseModel):
     )
     created_at: datetime = Field(description="When the template was created (UTC).")
     updated_at: datetime = Field(description="When the template was last replaced (UTC).")
+    last_used_at: datetime | None = Field(
+        description="When the newest extraction with this template was created (UTC); `null` when none was. "
+        "Replacing the template does not change it.",
+        examples=["2026-01-15T09:30:00Z"],
+    )
 
     @classmethod
     def from_domain(cls, template: Template) -> TemplateResponse:
@@ -185,6 +190,7 @@ class TemplateResponse(BaseModel):
             json_schema=build_json_schema(template.fields),
             created_at=template.created_at,
             updated_at=template.updated_at,
+            last_used_at=template.last_used_at,
         )
 
 

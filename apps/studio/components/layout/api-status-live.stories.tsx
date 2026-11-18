@@ -1,5 +1,5 @@
 import * as React from "react";
-import { expect, fn, waitFor } from "storybook/test";
+import { expect, fn, spyOn, waitFor } from "storybook/test";
 import preview from "~/.storybook/preview";
 import type { ApiHealth } from "~/lib/api-health-types";
 
@@ -16,8 +16,17 @@ const fetchMock = fn<typeof fetch>();
 /** Requests the component sent that the test has not answered yet. */
 const pendingAnswers: Array<(response: Response) => void> = [];
 
+/**
+ * Answers the newest pending check, the only one whose answer counts, and forgets the older ones: they were
+ * superseded, so a later wait for "a pending request" means a new one.
+ */
+function answerLatest(response: Response) {
+  pendingAnswers.at(-1)?.(response);
+  pendingAnswers.length = 0;
+}
+
 function answerNext(body: unknown) {
-  pendingAnswers.shift()?.(Response.json(body));
+  answerLatest(Response.json(body));
 }
 
 function stubTabHidden(isHidden: boolean) {
@@ -154,7 +163,7 @@ PollingFlipsTheStatus.test("Recovers to connected when a later check succeeds", 
 
 PollingFlipsTheStatus.test("Reports unavailable when the Studio route answers with an error", async ({ canvas }) => {
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-  pendingAnswers.shift()?.(new Response("boom", { status: 500 }));
+  answerLatest(new Response("boom", { status: 500 }));
 
   await expect(await canvas.findByText("API unavailable")).toBeVisible();
   await expect(canvas.getByText("localhost:8000")).toBeVisible();
@@ -353,4 +362,64 @@ DefaultIntervalTabHidden.test("A second visibilitychange while visible does not 
   await settle();
 
   await expect(liveDefaultIntervals.size).toBe(1);
+});
+
+function answerAt(index: number, body: unknown) {
+  pendingAnswers[index]?.(Response.json(body));
+}
+
+function checkNow() {
+  document.dispatchEvent(new Event("visibilitychange"));
+}
+
+export const OverlappingChecks = meta.story({
+  args: { intervalMs: DEFAULT_INTERVAL_MS * 10 }
+});
+
+OverlappingChecks.test("Lets the newest answer win over a slower, older one", async ({ canvas }) => {
+  checkNow();
+  checkNow();
+  await waitFor(() => expect(pendingAnswers).toHaveLength(2));
+
+  answerAt(1, { host: "localhost:8000", status: "unavailable" });
+  await expect(await canvas.findByText("API unavailable")).toBeVisible();
+
+  answerAt(0, { host: "localhost:8000", status: "connected" });
+  await settle();
+
+  await expect(canvas.getByText("API unavailable")).toBeVisible();
+});
+
+OverlappingChecks.test("Aborts the older request when a newer check starts, leaving one in flight", async () => {
+  checkNow();
+  checkNow();
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+  const [older, newer] = fetchMock.mock.calls.map(([, init]) => init?.signal);
+
+  await expect(older?.aborted).toBe(true);
+  await expect(newer?.aborted).toBe(false);
+});
+
+export const RequestTimeout = meta.story({
+  args: { intervalMs: DEFAULT_INTERVAL_MS * 10 },
+  beforeEach: () => {
+    const timeout = spyOn(AbortSignal, "timeout").mockImplementation(() =>
+      AbortSignal.abort(new DOMException("The operation timed out.", "TimeoutError"))
+    );
+    fetchMock.mockImplementation(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          reject(init?.signal?.reason);
+        })
+    );
+
+    return () => timeout.mockRestore();
+  }
+});
+
+RequestTimeout.test("Reports unavailable when a check times out, instead of waiting for ever", async ({ canvas }) => {
+  checkNow();
+
+  await expect(await canvas.findByText("API unavailable")).toBeVisible();
 });

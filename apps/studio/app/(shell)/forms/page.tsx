@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: "Forms"
 };
 
-// The list comes from the API at request time; the build must not need the API.
+/** The list comes from the API at request time; the build must not need the API. */
 export const dynamic = "force-dynamic";
 
 export default async function FormsPage() {

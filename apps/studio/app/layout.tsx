@@ -6,7 +6,7 @@ import { ThemeProvider } from "~/components/providers/theme-provider";
 
 import "./globals.css";
 
-// The variable names are the ones the design system reads (`font-poppins`, `font-code`).
+/** The variable names are the ones the design system reads (`font-poppins`, `font-code`). */
 const poppins = Poppins({
   display: "swap",
   subsets: ["latin", "latin-ext"],

@@ -7,7 +7,8 @@ import logger from "~/lib/logger";
 
 const HEALTH_TIMEOUT_MS = 3000;
 
-function readHost(): string {
+/** The API's host (and port), or `"unknown"` when the configured URL cannot be read. Never the full URL. */
+export function readApiHost(): string {
   try {
     return new URL(env.FORMLENS_API_URL).host;
   } catch {
@@ -17,7 +18,7 @@ function readHost(): string {
 
 /** Asks the API's readiness probe. A down, slow or failing API is a result, never an exception. */
 export async function checkApiHealth(): Promise<ApiHealth> {
-  const host = readHost();
+  const host = readApiHost();
 
   try {
     const response = await getReadiness({ cache: "no-store", signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) });

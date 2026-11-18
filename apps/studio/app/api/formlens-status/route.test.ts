@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test as it, vi } from "vitest";
 
 const checkApiHealth = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/api-health", () => ({ checkApiHealth }));
+vi.mock("~/lib/api-health", () => ({ checkApiHealth, readApiHost: () => "localhost:8000" }));
 
 import { GET } from "./route";
 

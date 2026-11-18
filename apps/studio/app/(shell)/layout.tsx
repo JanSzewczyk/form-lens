@@ -5,12 +5,9 @@ import { ApiStatus, ApiStatusFallback } from "~/components/layout/api-status";
 import { AppHeader } from "~/components/layout/app-header";
 import { AppSidebar } from "~/components/layout/app-sidebar";
 
-/** The design's aside is 248 px (15.5rem); the mobile sheet keeps the design system's own width. */
-const SHELL_STYLE = { "--sidebar-width": "15.5rem" } as React.CSSProperties;
-
 export default function ShellLayout({ children }: LayoutProps<"/">) {
   return (
-    <SidebarProvider style={SHELL_STYLE}>
+    <SidebarProvider>
       <AppSidebar
         status={
           <React.Suspense fallback={<ApiStatusFallback />}>

@@ -1,5 +1,4 @@
 import { SidebarProvider } from "@szum-tech/design-system";
-import type * as React from "react";
 import { expect, screen, waitFor } from "storybook/test";
 import preview from "~/.storybook/preview";
 
@@ -7,7 +6,6 @@ import { ApiStatusLive } from "./api-status-live";
 import { AppHeader } from "./app-header";
 import { AppSidebar } from "./app-sidebar";
 
-const SHELL_STYLE = { "--sidebar-width": "15.5rem" } as React.CSSProperties;
 const PHONE_WIDTH = 375;
 
 /** The breadcrumb repeats the section name, so the main navigation's own link is looked up inside its navigation. */
@@ -27,7 +25,7 @@ const meta = preview.meta({
   component: AppSidebar,
   decorators: [
     (Story) => (
-      <SidebarProvider style={SHELL_STYLE}>
+      <SidebarProvider>
         <Story />
         <div className="flex min-w-0 flex-1 flex-col">
           <AppHeader />

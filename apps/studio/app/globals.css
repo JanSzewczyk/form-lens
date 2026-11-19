@@ -2,4 +2,5 @@
 
 @import "@szum-tech/design-system/tailwind/global.css";
 
-@source "../node_modules/@szum-tech/design-system";
+/* Packages are hoisted to the repository root (npm workspaces), so the design system is two folders above the app. */
+@source "../../../node_modules/@szum-tech/design-system/dist";

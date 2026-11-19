@@ -50,4 +50,27 @@ describe("FormsPage search params", () => {
 
     expect(loadTemplates).toHaveBeenCalledWith({ page: 1, search: "invoice" });
   });
+
+  it("keeps the offset of a huge page number inside what the API accepts, so the list is not reported as down", async () => {
+    const maxOffset = 2 ** 31 - 1;
+
+    await renderPage({ page: "999999999" });
+
+    const { page } = loadTemplates.mock.calls[0]?.[0] as { page: number };
+    expect((page - 1) * 12).toBeLessThanOrEqual(maxOffset);
+  });
+
+  it("treats a whitespace-only search as no search", async () => {
+    await renderPage({ q: "   " });
+
+    expect(loadTemplates).toHaveBeenCalledWith({ page: 1, search: "" });
+  });
+
+  it("ignores a negative or fractional page", async () => {
+    await renderPage({ page: "-2" });
+    await renderPage({ page: "1.5" });
+
+    expect(loadTemplates).toHaveBeenNthCalledWith(1, { page: 1, search: "" });
+    expect(loadTemplates).toHaveBeenNthCalledWith(2, { page: 1, search: "" });
+  });
 });

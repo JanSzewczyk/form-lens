@@ -3,6 +3,7 @@ import { listTemplates } from "~/lib/formlens-api";
 import logger from "~/lib/logger";
 
 const PAGE_SIZE = 12;
+const REFUSED_REASON = "The FormLens API refused the request.";
 
 export type TemplatesQuery = {
   /** Part of a template name; an empty string means no search. */
@@ -20,9 +21,11 @@ export type TemplatesResult =
  * so the page still renders.
  */
 export async function loadTemplates({ search, page }: TemplatesQuery): Promise<TemplatesResult> {
+  const trimmedSearch = search.trim();
+
   try {
     const response = await listTemplates(
-      { limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE, search: search === "" ? undefined : search },
+      { limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE, search: trimmedSearch === "" ? undefined : trimmedSearch },
       { cache: "no-store" }
     );
 
@@ -30,7 +33,7 @@ export async function loadTemplates({ search, page }: TemplatesQuery): Promise<T
       return { pageSize: PAGE_SIZE, status: "ok", templates: response.data.items, total: response.data.total };
     }
     logger.withMetadata({ problem: response.data, status: response.status }).warn("templates_request_refused");
-    return { reason: response.data.title, status: "unavailable" };
+    return { reason: response.data?.title || REFUSED_REASON, status: "unavailable" };
   } catch (error) {
     logger.withError(error).warn("templates_request_failed");
     return { reason: "The FormLens API does not answer.", status: "unavailable" };

@@ -70,4 +70,38 @@ describe("loadTemplates", () => {
       status: "unavailable"
     });
   });
+
+  it("sends no search for a whitespace-only one (stricter reading: the loader does not rely on its caller to trim)", async () => {
+    listTemplates.mockResolvedValue({ data: { items: [], limit: 12, offset: 0, total: 0 }, status: 200 });
+
+    await loadTemplates({ page: 1, search: "   " });
+
+    expect(listTemplates.mock.calls[0]?.[0]).toMatchObject({ search: undefined });
+  });
+
+  it("gives a readable reason when the refusal carries no Problem Details title", async () => {
+    listTemplates.mockResolvedValue({ data: {}, status: 502 });
+
+    const result = await loadTemplates(firstPage);
+
+    expect(result).toMatchObject({ status: "unavailable" });
+    expect((result as { reason: unknown }).reason).toEqual(expect.stringMatching(/\S/));
+  });
+
+  it("reports a refusal whose body is empty as unavailable instead of throwing", async () => {
+    listTemplates.mockResolvedValue({ data: null, status: 500 });
+
+    await expect(loadTemplates(firstPage)).resolves.toMatchObject({ status: "unavailable" });
+  });
+
+  it("keeps an empty last page an ok result with its total", async () => {
+    listTemplates.mockResolvedValue({ data: { items: [], limit: 12, offset: 96, total: 30 }, status: 200 });
+
+    await expect(loadTemplates({ page: 9, search: "" })).resolves.toEqual({
+      pageSize: 12,
+      status: "ok",
+      templates: [],
+      total: 30
+    });
+  });
 });

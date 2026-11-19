@@ -15,6 +15,11 @@ export const dynamic = "force-dynamic";
 
 /** The API refuses a longer search with a 422, which the list would report as an unavailable API. */
 const MAX_SEARCH_LENGTH = 100;
+/**
+ * The API refuses an offset above 2**31 - 1 with a 422, which the list would report as an unavailable API. With 12 forms
+ * per page the last page that keeps `(page - 1) * 12` inside that limit is floor((2**31 - 1) / 12) + 1.
+ */
+const MAX_PAGE = 178_956_971;
 const TOAST_FLAGS: Array<ActionToastFlag> = ["created", "saved", "deleted"];
 
 type SearchParams = PageProps<"/forms">["searchParams"] extends Promise<infer Params> ? Params : never;
@@ -26,7 +31,7 @@ function firstValue(value: string | Array<string> | undefined): string {
 function parseSearchParams(params: SearchParams) {
   const search = firstValue(params.q).trim().slice(0, MAX_SEARCH_LENGTH);
   const parsedPage = Number.parseInt(firstValue(params.page), 10);
-  const page = Number.isSafeInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
+  const page = Number.isSafeInteger(parsedPage) && parsedPage >= 1 ? Math.min(parsedPage, MAX_PAGE) : 1;
   const flag = TOAST_FLAGS.find((name) => firstValue(params[name]) === "1") ?? null;
 
   return { flag, page, search };

@@ -72,3 +72,52 @@ export const UsedLongAgoTemplate = meta.story({
 UsedLongAgoTemplate.test("Counts an old date in months", async ({ canvas }) => {
   await expect(canvas.getByText("Last used 3 months ago")).toBeVisible();
 });
+
+export const UsedTodayTemplate = meta.story({
+  args: { template: buildTemplate({ last_used_at: "2026-11-19T10:00:00Z" }) },
+  name: "Used today"
+});
+
+UsedTodayTemplate.test("Says today for a use a few hours ago", async ({ canvas }) => {
+  await expect(canvas.getByText("Last used today")).toBeVisible();
+});
+
+export const UsedInTheFutureTemplate = meta.story({
+  args: { template: buildTemplate({ last_used_at: "2026-11-19T15:00:00Z" }) },
+  name: "Used in the future (clock skew)"
+});
+
+UsedInTheFutureTemplate.test(
+  "Never shows a future date: a use ahead of the clock reads as today",
+  async ({ canvas }) => {
+    await expect(canvas.getByText("Last used today")).toBeVisible();
+    await expect(canvas.queryByText(/\bin \d|tomorrow|next/i)).not.toBeInTheDocument();
+  }
+);
+
+export const UsedLastYearTemplate = meta.story({
+  args: { template: buildTemplate({ last_used_at: "2025-11-19T09:30:00Z" }) },
+  name: "Used a year ago"
+});
+
+UsedLastYearTemplate.test("Counts a date one year back in years, not in 12 months", async ({ canvas }) => {
+  await expect(canvas.getByText("Last used last year")).toBeVisible();
+});
+
+export const UsedTwentyNineDaysAgoTemplate = meta.story({
+  args: { template: buildTemplate({ last_used_at: "2026-10-21T09:30:00Z" }) },
+  name: "Used 29 days ago"
+});
+
+UsedTwentyNineDaysAgoTemplate.test("Counts 29 days in days", async ({ canvas }) => {
+  await expect(canvas.getByText("Last used 29 days ago")).toBeVisible();
+});
+
+export const NoFieldsTemplate = meta.story({
+  args: { template: buildTemplate({ fieldCount: 0 }) },
+  name: "No fields"
+});
+
+NoFieldsTemplate.test("Counts zero fields in the plural", async ({ canvas }) => {
+  await expect(canvas.getByText("0 fields")).toBeVisible();
+});

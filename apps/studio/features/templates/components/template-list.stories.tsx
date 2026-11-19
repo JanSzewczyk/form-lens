@@ -180,3 +180,77 @@ ApiUnavailable.test("Shows an error message instead of the list", async ({ canva
   await expect(canvas.queryByRole("list")).not.toBeInTheDocument();
   await expect(canvas.queryByText("No forms yet")).not.toBeInTheDocument();
 });
+
+export const ExactlyOnePage = meta.story({
+  args: { result: okResult(THREE_TEMPLATES, 12) },
+  name: "Exactly one page of forms"
+});
+
+ExactlyOnePage.test("Shows no pager for exactly 12 forms", async ({ canvas }) => {
+  await expect(canvas.getByText("12 forms")).toBeVisible();
+  await expect(canvas.queryByRole("navigation", { name: "Pages" })).not.toBeInTheDocument();
+});
+
+export const OneFormOverOnePage = meta.story({
+  args: { result: okResult(THREE_TEMPLATES, 13) },
+  name: "One form over one page"
+});
+
+OneFormOverOnePage.test("Shows a pager with a second page for 13 forms", async ({ canvas }) => {
+  await expect(canvas.getByText("Page 1 of 2")).toBeVisible();
+  await expect(canvas.getByRole("link", { name: "Next" })).toHaveAttribute("href", "/forms?page=2");
+});
+
+export const MiddlePage = meta.story({
+  args: { page: 2, result: okResult(THREE_TEMPLATES, 30) },
+  name: "Middle page"
+});
+
+MiddlePage.test("Links page 2 of 3 back to the bare list and on to page 3", async ({ canvas }) => {
+  await expect(canvas.getByText("Page 2 of 3")).toBeVisible();
+  await expect(canvas.getByRole("link", { name: "Previous" })).toHaveAttribute("href", "/forms");
+  await expect(canvas.getByRole("link", { name: "Next" })).toHaveAttribute("href", "/forms?page=3");
+});
+
+export const SearchWithSpecialCharacters = meta.story({
+  args: { result: okResult(THREE_TEMPLATES, 30), search: "R&D / a=b #1" },
+  name: "Search with special characters"
+});
+
+SearchWithSpecialCharacters.test("Carries the whole search through the pager link", async ({ canvas }) => {
+  const href = canvas.getByRole("link", { name: "Next" }).getAttribute("href") ?? "";
+  const url = new URL(href, "http://studio.test");
+
+  await expect(url.pathname).toBe("/forms");
+  await expect(url.searchParams.get("q")).toBe("R&D / a=b #1");
+  await expect(url.searchParams.get("page")).toBe("2");
+});
+
+export const PagePastTheEnd = meta.story({
+  args: { page: 9, result: okResult([], 30), search: "R&D" },
+  name: "Page past the end"
+});
+
+PagePastTheEnd.test(
+  "Says there are no forms on this page and links back to page 1 of the search",
+  async ({ canvas }) => {
+    await expect(canvas.getByText("There are no forms on this page")).toBeVisible();
+    await expect(canvas.queryByText("No forms yet")).not.toBeInTheDocument();
+    await expect(canvas.queryByText("No forms match your search")).not.toBeInTheDocument();
+    const href = canvas.getByRole("link", { name: /first page/i }).getAttribute("href") ?? "";
+    await expect(new URL(href, "http://studio.test").searchParams.get("q")).toBe("R&D");
+    await expect(new URL(href, "http://studio.test").searchParams.has("page")).toBe(false);
+  }
+);
+
+export const UnavailableWhileSearching = meta.story({
+  args: { result: UNAVAILABLE, search: "invoice" },
+  name: "API unavailable while searching"
+});
+
+UnavailableWhileSearching.test("Shows the error, not an empty or no-match state", async ({ canvas }) => {
+  await expect(canvas.getByRole("alert")).toHaveTextContent("The FormLens API is not available");
+  await expect(canvas.queryByText("No forms match your search")).not.toBeInTheDocument();
+  await expect(canvas.queryByRole("link", { name: /create your first form/i })).not.toBeInTheDocument();
+  await expect(canvas.queryByRole("status")).not.toBeInTheDocument();
+});

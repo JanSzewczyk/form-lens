@@ -98,7 +98,7 @@ const fieldSchema = z
       context.addIssue({ code: "custom", message: "The minimum is above the maximum", path: ["minimum"] });
     }
 
-    if (field.pattern.trim() !== "" && field.type !== TemplateFieldType.text) {
+    if (field.pattern !== "" && field.type !== TemplateFieldType.text) {
       context.addIssue({ code: "custom", message: "Only a text field has a pattern", path: ["pattern"] });
     }
   });

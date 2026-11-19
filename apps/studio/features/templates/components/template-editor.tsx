@@ -120,19 +120,21 @@ export function TemplateEditor(props: TemplateEditorProps) {
                     Name
                   </label>
                   <Input
+                    aria-describedby={errors.name ? "template-name-error" : undefined}
                     id="template-name"
                     invalid={Boolean(errors.name)}
                     maxLength={TEMPLATE_NAME_MAX * 2}
                     placeholder="Invoice"
                     {...form.register("name")}
                   />
-                  <FieldError errors={[errors.name]} />
+                  <FieldError errors={[errors.name]} id="template-name-error" />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-body-sm font-semibold" htmlFor="template-description">
                     Description <span className="text-mute font-normal">(optional)</span>
                   </label>
                   <Textarea
+                    aria-describedby={errors.description ? "template-description-error" : undefined}
                     id="template-description"
                     invalid={Boolean(errors.description)}
                     placeholder="What kind of document this form describes"
@@ -140,7 +142,7 @@ export function TemplateEditor(props: TemplateEditorProps) {
                     {...form.register("description")}
                   />
                   <FieldDescription>Up to {TEMPLATE_DESCRIPTION_MAX} characters.</FieldDescription>
-                  <FieldError errors={[errors.description]} />
+                  <FieldError errors={[errors.description]} id="template-description-error" />
                 </div>
               </CardContent>
             </Card>

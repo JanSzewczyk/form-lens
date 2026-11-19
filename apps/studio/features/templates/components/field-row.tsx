@@ -59,6 +59,10 @@ export function FieldRow({ fieldId, index, isFirst, isLast, onMoveDown, onMoveUp
   const hasRange = type === TemplateFieldType.number || type === TemplateFieldType.integer;
   const isText = type === TemplateFieldType.text;
 
+  function errorId(property: string) {
+    return `${fieldId}-${property}-error`;
+  }
+
   function changeType(next: TemplateFieldType, onChange: (value: TemplateFieldType) => void) {
     onChange(next);
     if (next !== TemplateFieldType.number && next !== TemplateFieldType.integer) {
@@ -126,6 +130,7 @@ export function FieldRow({ fieldId, index, isFirst, isLast, onMoveDown, onMoveUp
       <div className="grid min-w-0 grid-cols-1 gap-3 @xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,11rem)]">
         <div className="flex min-w-0 flex-col gap-1">
           <Input
+            aria-describedby={rowErrors?.key ? errorId("key") : undefined}
             aria-label={`Key of field ${number}`}
             autoComplete="off"
             className="font-code"
@@ -133,16 +138,17 @@ export function FieldRow({ fieldId, index, isFirst, isLast, onMoveDown, onMoveUp
             placeholder="invoice_number"
             {...register(`fields.${index}.key`)}
           />
-          <FieldError errors={[rowErrors?.key]} />
+          <FieldError errors={[rowErrors?.key]} id={errorId("key")} />
         </div>
         <div className="flex min-w-0 flex-col gap-1">
           <Input
+            aria-describedby={rowErrors?.description ? errorId("description") : undefined}
             aria-label={`Description of field ${number}`}
             invalid={Boolean(rowErrors?.description)}
             placeholder="What to look for, where it sits on the form"
             {...register(`fields.${index}.description`)}
           />
-          <FieldError errors={[rowErrors?.description]} />
+          <FieldError errors={[rowErrors?.description]} id={errorId("description")} />
         </div>
         <Controller
           control={control}
@@ -168,13 +174,14 @@ export function FieldRow({ fieldId, index, isFirst, isLast, onMoveDown, onMoveUp
       {type === TemplateFieldType.choice ? (
         <div className="flex min-w-0 flex-col gap-1">
           <Textarea
+            aria-describedby={rowErrors?.allowedValues ? errorId("allowedValues") : undefined}
             aria-label={`Allowed values of field ${number}`}
             invalid={Boolean(rowErrors?.allowedValues)}
             placeholder={"Allowed values, one per line\nopen\nclosed"}
             rows={3}
             {...register(`fields.${index}.allowedValues`)}
           />
-          <FieldError errors={[rowErrors?.allowedValues]} />
+          <FieldError errors={[rowErrors?.allowedValues]} id={errorId("allowedValues")} />
         </div>
       ) : null}
 
@@ -191,35 +198,38 @@ export function FieldRow({ fieldId, index, isFirst, isLast, onMoveDown, onMoveUp
               <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
                 <div className="flex min-w-0 flex-col gap-1">
                   <Input
+                    aria-describedby={rowErrors?.minimum ? errorId("minimum") : undefined}
                     aria-label={`Minimum of field ${number}`}
                     inputMode="decimal"
                     invalid={Boolean(rowErrors?.minimum)}
                     placeholder="Minimum"
                     {...register(`fields.${index}.minimum`)}
                   />
-                  <FieldError errors={[rowErrors?.minimum]} />
+                  <FieldError errors={[rowErrors?.minimum]} id={errorId("minimum")} />
                 </div>
                 <div className="flex min-w-0 flex-col gap-1">
                   <Input
+                    aria-describedby={rowErrors?.maximum ? errorId("maximum") : undefined}
                     aria-label={`Maximum of field ${number}`}
                     inputMode="decimal"
                     invalid={Boolean(rowErrors?.maximum)}
                     placeholder="Maximum"
                     {...register(`fields.${index}.maximum`)}
                   />
-                  <FieldError errors={[rowErrors?.maximum]} />
+                  <FieldError errors={[rowErrors?.maximum]} id={errorId("maximum")} />
                 </div>
               </div>
             ) : (
               <div className="flex min-w-0 flex-col gap-1">
                 <Input
+                  aria-describedby={rowErrors?.pattern ? errorId("pattern") : undefined}
                   aria-label={`Pattern of field ${number}`}
                   className="font-code"
                   invalid={Boolean(rowErrors?.pattern)}
                   placeholder="Regular expression, for example ^INV-[0-9]+$"
                   {...register(`fields.${index}.pattern`)}
                 />
-                <FieldError errors={[rowErrors?.pattern]} />
+                <FieldError errors={[rowErrors?.pattern]} id={errorId("pattern")} />
               </div>
             )}
           </CollapsibleContent>

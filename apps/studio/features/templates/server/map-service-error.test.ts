@@ -97,3 +97,45 @@ describe("mapInvalidInput", () => {
     });
   });
 });
+
+describe("mapProblem, the edges of a validation-error (AC19)", () => {
+  it("maps the position of a rejected allowed value to the field that shows it", () => {
+    const result = mapProblem(422, {
+      errors: [
+        { loc: ["body", "fields", 0, "allowed_values", 2], msg: "String should have at least 1 character", type: "x" }
+      ],
+      status: 422,
+      title: "Request validation failed"
+    });
+
+    // The row renders `fields.0.allowedValues`; a path that goes deeper has no place on the screen.
+    expect(result.fieldErrors).toEqual({ "fields.0.allowedValues": "String should have at least 1 character" });
+  });
+
+  it("maps a problem of the whole field list to `fields`, where the editor shows it", () => {
+    const result = mapProblem(422, {
+      errors: [{ loc: ["body", "fields"], msg: "List should have at least 1 item after validation, not 0", type: "x" }],
+      status: 422,
+      title: "Request validation failed"
+    });
+
+    expect(result.fieldErrors).toEqual({ fields: "List should have at least 1 item after validation, not 0" });
+  });
+
+  it("does not lose the API's message when no issue names a form input (stricter reading of AC19)", () => {
+    const result = mapProblem(422, {
+      errors: [{ loc: ["body"], msg: "Input should be a valid dictionary", type: "dict_type" }],
+      status: 422,
+      title: "Request validation failed"
+    });
+
+    expect(JSON.stringify(result)).toContain("Input should be a valid dictionary");
+  });
+
+  it("keeps the user-facing text Polish and free of the API's internals for a 5xx", () => {
+    const result = mapProblem(500, { detail: "Traceback (most recent call last)", status: 500, title: "x" });
+
+    expect(result.error).toMatch(/Interfejs API/);
+    expect(JSON.stringify(result)).not.toContain("Traceback");
+  });
+});

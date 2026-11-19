@@ -26,7 +26,6 @@ export function emptyTemplateFormValues(): TemplateFormValues {
 
 function toFieldSpec(field: TemplateFieldValues): FieldSpec {
   const hasRange = field.type === TemplateFieldType.number || field.type === TemplateFieldType.integer;
-  const pattern = field.pattern.trim();
 
   return {
     allowed_values: field.type === TemplateFieldType.choice ? parseAllowedValues(field.allowedValues) : null,
@@ -34,7 +33,7 @@ function toFieldSpec(field: TemplateFieldValues): FieldSpec {
     maximum: hasRange && field.maximum.trim() !== "" ? Number(field.maximum) : null,
     minimum: hasRange && field.minimum.trim() !== "" ? Number(field.minimum) : null,
     name: field.key,
-    pattern: field.type === TemplateFieldType.text && pattern !== "" ? pattern : null,
+    pattern: field.type === TemplateFieldType.text && field.pattern !== "" ? field.pattern : null,
     required: field.required,
     type: field.type
   };

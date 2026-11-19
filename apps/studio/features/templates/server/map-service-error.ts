@@ -45,11 +45,12 @@ function formPathOf(loc: ReadonlyArray<string | number>): string | undefined {
   if (source !== "body" || path.length === 0) {
     return undefined;
   }
-  return path
-    .map((part, index) =>
-      index === 2 && typeof part === "string" ? (FORM_PROPERTY_OF_API_PROPERTY[part] ?? part) : part
-    )
-    .join(".");
+  const [list, index, property] = path;
+  if (list !== "fields" || index === undefined || property === undefined) {
+    return path.join(".");
+  }
+  // Anything deeper than the property (the position of one allowed value) is shown on the property's own input.
+  return `fields.${index}.${FORM_PROPERTY_OF_API_PROPERTY[String(property)] ?? property}`;
 }
 
 function withDetail(message: string, detail: string | null | undefined): string {
@@ -66,13 +67,24 @@ export function mapProblem(status: number, problem: ProblemDetail | undefined): 
   }
   if (status === 422 && problem?.errors?.length) {
     const fieldErrors: Record<string, string> = {};
+    const ofTheBody: Array<string> = [];
     for (const issue of problem.errors) {
       const path = formPathOf(issue.loc);
       if (path !== undefined) {
         fieldErrors[path] ??= issue.msg;
+      } else if (issue.loc[0] === "body") {
+        ofTheBody.push(issue.msg);
       }
     }
-    return failure(TemplateActionFailureKind.validation, MESSAGE.invalid, fieldErrors);
+    // A problem of the body as a whole has no input to sit next to, so its message goes into the form-level text.
+    const error =
+      ofTheBody.length === 0
+        ? MESSAGE.invalid
+        : withDetail(
+            Object.keys(fieldErrors).length === 0 ? MESSAGE.invalidTemplate : MESSAGE.invalid,
+            ofTheBody.join("; ")
+          );
+    return failure(TemplateActionFailureKind.validation, error, fieldErrors);
   }
   if (status === 422) {
     return failure(TemplateActionFailureKind.validation, withDetail(MESSAGE.invalidTemplate, problem?.detail));

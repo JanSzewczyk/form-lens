@@ -314,3 +314,306 @@ PhoneWidth.test("Stacks the parts of a field row and does not scroll sideways (A
   await expect(type.top).toBeGreaterThanOrEqual(description.bottom);
   await expect(phone.scrollWidth).toBeLessThanOrEqual(phone.clientWidth);
 });
+
+ThreeFields.test(
+  "Moving a row takes its key, type and values along and sends the rows in the new order (AC16)",
+  async ({ args, canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Move field 1 down" }));
+
+    await expect(canvas.getByLabelText("Key of field 1")).toHaveValue("total");
+    await expect(canvas.getByRole("combobox", { name: "Type of field 1" })).toHaveTextContent("Number");
+    await expect(canvas.getByLabelText("Key of field 2")).toHaveValue("invoice_number");
+    await expect(canvas.getByRole("combobox", { name: "Type of field 2" })).toHaveTextContent("Text");
+
+    await userEvent.click(canvas.getByRole("button", { name: "Create form" }));
+
+    await expect(args.onSubmitAction).toHaveBeenCalledWith(
+      templateFormValues({
+        fields: [
+          fieldValues({ key: "total", type: "number" }),
+          fieldValues({ key: "invoice_number" }),
+          fieldValues({ key: "issued_on", type: "date" })
+        ]
+      })
+    );
+  }
+);
+
+ThreeFields.test("Cannot move the first row up or the last row down (AC16)", async ({ canvas }) => {
+  await expect(canvas.getByRole("button", { name: "Move field 1 up" })).toBeDisabled();
+  await expect(canvas.getByRole("button", { name: "Move field 3 down" })).toBeDisabled();
+  await expect(canvas.getByRole("button", { name: "Move field 2 up" })).toBeEnabled();
+});
+
+ThreeFields.test(
+  "Removing every row brings back the empty state and an empty preview, and the form is refused (AC16, AC13)",
+  async ({ args, canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Remove field 1" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Remove field 1" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Remove field 1" }));
+
+    await expect(canvas.getByText("No fields yet")).toBeVisible();
+    await expect(canvas.getByLabelText("Preview of the API response")).toHaveTextContent("{ }");
+
+    await userEvent.click(canvas.getByRole("button", { name: "Create form" }));
+    await expect(await canvas.findByText("Add at least one field")).toBeVisible();
+    await expect(args.onSubmitAction).not.toHaveBeenCalled();
+  }
+);
+
+ThreeFields.test(
+  "Removing a row keeps the typed values of the rows that stay (AC16)",
+  async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Remove field 2" }));
+
+    await expect(canvas.getByLabelText("Key of field 1")).toHaveValue("invoice_number");
+    await expect(canvas.getByLabelText("Key of field 2")).toHaveValue("issued_on");
+    await expect(canvas.getByRole("combobox", { name: "Type of field 2" })).toHaveTextContent("Date");
+  }
+);
+
+CreateEmpty.test(
+  "Points at the name input itself when the name is only spaces (AC13)",
+  async ({ args, canvas, userEvent }) => {
+    await userEvent.type(canvas.getByLabelText("Name"), "   ");
+    await userEvent.click(canvas.getByRole("button", { name: "Create form" }));
+
+    await expect(await canvas.findByText("Enter a name for the form")).toBeVisible();
+    await expect(canvas.getByLabelText("Name")).toBeInvalid();
+    await expect(canvas.getByLabelText(DESCRIPTION_LABEL)).toBeValid();
+    await expect(args.onSubmitAction).not.toHaveBeenCalled();
+  }
+);
+
+CreateEmpty.test(
+  "Ties the message to the name input for a screen reader (stricter reading of AC13)",
+  async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Create form" }));
+
+    await expect(await canvas.findByText("Enter a name for the form")).toBeVisible();
+    await expect(canvas.getByLabelText("Name")).toHaveAccessibleDescription(/Enter a name for the form/);
+  }
+);
+
+DuplicateKeys.test("Marks only the repeated key, not the first use of it (AC14)", async ({ canvas, userEvent }) => {
+  await userEvent.click(canvas.getByRole("button", { name: "Create form" }));
+
+  await expect(await canvas.findByText("This key is already used by another field")).toBeVisible();
+  await expect(canvas.getAllByText("This key is already used by another field")).toHaveLength(1);
+  await expect(canvas.getByLabelText("Key of field 3")).toBeInvalid();
+  await expect(canvas.getByLabelText("Key of field 1")).toBeValid();
+  await expect(canvas.getByLabelText("Key of field 2")).toBeValid();
+});
+
+DuplicateKeys.test(
+  "Lets the form through once the duplicate is renamed (AC14)",
+  async ({ args, canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Create form" }));
+    await expect(await canvas.findByText("This key is already used by another field")).toBeVisible();
+
+    await userEvent.type(canvas.getByLabelText("Key of field 3"), "_2");
+    await userEvent.click(canvas.getByRole("button", { name: "Create form" }));
+
+    await waitFor(() => expect(args.onSubmitAction).toHaveBeenCalledOnce());
+    await expect(canvas.queryByText("This key is already used by another field")).not.toBeInTheDocument();
+  }
+);
+
+ChoiceWithoutValues.test(
+  "Marks the allowed values of that field and no other input (AC15)",
+  async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("combobox", { name: "Type of field 1" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Choice" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Create form" }));
+
+    await expect(await canvas.findByText("Add at least one allowed value")).toBeVisible();
+    await expect(canvas.getByLabelText("Allowed values of field 1")).toBeInvalid();
+    await expect(canvas.getByLabelText("Key of field 1")).toBeValid();
+  }
+);
+
+ChoiceWithoutValues.test(
+  "Sends the values once they are typed, one per line (AC15)",
+  async ({ args, canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("combobox", { name: "Type of field 1" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Choice" }));
+    await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
+    await userEvent.type(await canvas.findByLabelText("Allowed values of field 1"), "open{Enter}closed");
+    await userEvent.click(canvas.getByRole("button", { name: "Create form" }));
+
+    await waitFor(() => expect(args.onSubmitAction).toHaveBeenCalledOnce());
+    await expect(args.onSubmitAction).toHaveBeenCalledWith(
+      templateFormValues({
+        fields: [fieldValues({ allowedValues: "open\nclosed", key: "status", type: "choice" })]
+      })
+    );
+  }
+);
+
+SaveRejected.test("Marks the key the API rejected as invalid (AC19)", async ({ canvas, userEvent }) => {
+  await userEvent.click(canvas.getByRole("button", { name: "Save form" }));
+
+  await expect(await canvas.findByText("String should match pattern")).toBeVisible();
+  await expect(canvas.getByLabelText("Key of field 1")).toBeInvalid();
+  await expect(canvas.getByLabelText("Name")).toBeValid();
+});
+
+const rejectedByTheApi = failure({
+  error: "Interfejs API odrzucił formularz. Popraw zaznaczone pola.",
+  fieldErrors: {
+    "fields.0.maximum": "Input should be a valid number",
+    name: "String should have at most 100 characters"
+  }
+});
+
+export const RangeRejected = meta.story({
+  args: {
+    initialValues: templateFormValues({
+      fields: [fieldValues({ key: "total", type: "number" })],
+      name: "Invoice"
+    }),
+    mode: "create",
+    onSubmitAction: fn(async () => rejectedByTheApi)
+  }
+});
+
+RangeRejected.test(
+  "Opens the Advanced part of a row to show the API's message about its range, and keeps the input (AC19)",
+  async ({ canvas, userEvent }) => {
+    await expect(canvas.queryByLabelText("Maximum of field 1")).not.toBeInTheDocument();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Create form" }));
+
+    await expect(await canvas.findByText("Input should be a valid number")).toBeVisible();
+    await expect(canvas.getByLabelText("Maximum of field 1")).toBeInvalid();
+    await expect(canvas.getByText("String should have at most 100 characters")).toBeVisible();
+    await expect(canvas.getByLabelText("Name")).toHaveValue("Invoice");
+    await expect(canvas.getByLabelText("Key of field 1")).toHaveValue("total");
+  }
+);
+
+export const Saving = meta.story({
+  args: {
+    initialValues: templateFormValues(),
+    mode: "edit",
+    onDeleteAction: fn(neverAnswers),
+    onSubmitAction: fn(neverAnswers)
+  }
+});
+
+Saving.test(
+  "Sends the form once, even when Enter is pressed while it is saving (AC12, AC18)",
+  async ({ args, canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Save form" }));
+    await waitFor(() => expect(args.onSubmitAction).toHaveBeenCalledOnce());
+
+    await userEvent.type(canvas.getByLabelText("Name"), "{Enter}");
+
+    await expect(args.onSubmitAction).toHaveBeenCalledOnce();
+    await expect(canvas.getByRole("button", { name: /Save form/ })).toBeDisabled();
+    await expect(canvas.getByRole("button", { name: "Delete" })).toBeDisabled();
+  }
+);
+
+Saving.test("Cancel leads back to the list and calls no action (edge case)", async ({ args, canvas }) => {
+  await expect(canvas.getByRole("link", { name: "Cancel" })).toHaveAttribute("href", "/forms");
+  await expect(args.onSubmitAction).not.toHaveBeenCalled();
+  await expect(args.mode === "edit" && args.onDeleteAction).not.toHaveBeenCalled();
+});
+
+export const FiftyFields = meta.story({
+  args: {
+    initialValues: templateFormValues({
+      fields: Array.from({ length: 50 }, (_, index) => fieldValues({ key: `field_${index}` }))
+    }),
+    mode: "create",
+    onSubmitAction: fn(neverAnswers)
+  }
+});
+
+FiftyFields.test("Stops adding rows at the API's limit of 50 fields (edge case)", async ({ canvas }) => {
+  await expect(canvas.getByRole("button", { name: "Add field" })).toBeDisabled();
+  await expect(canvas.getByText(/^50 fields/)).toBeVisible();
+});
+
+export const TypeChanges = meta.story({
+  args: {
+    initialValues: filled,
+    mode: "edit",
+    onDeleteAction: fn(neverAnswers),
+    onSubmitAction: fn(neverAnswers)
+  }
+});
+
+TypeChanges.test(
+  "Drops the range, pattern and allowed values a row can no longer have when its type changes (edge case)",
+  async ({ args, canvas, userEvent }) => {
+    for (const [field, option] of [
+      [2, "Yes / no (boolean)"],
+      [3, "Text"],
+      [1, "Number"]
+    ] as const) {
+      await userEvent.click(canvas.getByRole("combobox", { name: `Type of field ${field}` }));
+      await userEvent.click(await screen.findByRole("option", { name: option }));
+      await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
+    }
+
+    await userEvent.click(canvas.getByRole("button", { name: "Save form" }));
+
+    await waitFor(() => expect(args.onSubmitAction).toHaveBeenCalledOnce());
+    await expect(args.onSubmitAction).toHaveBeenCalledWith({
+      ...filled,
+      fields: [
+        { ...filled.fields[0], pattern: "", type: "number" },
+        { ...filled.fields[1], maximum: "", minimum: "", type: "boolean" },
+        { ...filled.fields[2], allowedValues: "", type: "text" }
+      ]
+    });
+  }
+);
+
+const longKey = `a${"b".repeat(63)}`;
+
+export const PhoneWidthLongText = meta.story({
+  args: {
+    initialValues: templateFormValues({
+      description: "d".repeat(300),
+      fields: [
+        fieldValues({
+          allowedValues: `${"v".repeat(100)}\nshort`,
+          description: "x".repeat(300),
+          key: longKey,
+          type: "choice"
+        }),
+        fieldValues({ key: `${longKey.slice(0, 63)}c`, maximum: "123456789012345678901234567890", type: "number" })
+      ],
+      name: "N".repeat(100)
+    }),
+    mode: "edit",
+    onDeleteAction: fn(neverAnswers),
+    onSubmitAction: fn(neverAnswers)
+  },
+  decorators: [
+    (Story) => (
+      <div data-testid="phone" style={{ width: 375 }}>
+        <Story />
+      </div>
+    )
+  ]
+});
+
+PhoneWidthLongText.test(
+  "Keeps long keys and values and the buttons inside the screen without sideways scrolling (AC24)",
+  async ({ canvas }) => {
+    const phone = canvas.getByTestId("phone");
+    const right = phone.getBoundingClientRect().right;
+
+    await expect(phone.scrollWidth).toBeLessThanOrEqual(phone.clientWidth);
+    for (const name of ["Delete", "Cancel", "Save form"]) {
+      const element = canvas.getByRole(name === "Cancel" ? "link" : "button", { name });
+      await expect(element.getBoundingClientRect().right).toBeLessThanOrEqual(right);
+    }
+    await expect(canvas.getByLabelText("Key of field 1").getBoundingClientRect().right).toBeLessThanOrEqual(right);
+    await expect(canvas.getByLabelText("Maximum of field 2").getBoundingClientRect().right).toBeLessThanOrEqual(right);
+  }
+);

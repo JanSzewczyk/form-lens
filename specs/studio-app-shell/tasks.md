@@ -7,7 +7,7 @@
 
 ### T1: Template search and last-used date in the API
 project: api
-status: draft
+status: in-progress
 depends_on: []
 acceptance: AC22, AC23
 plan: High-level approach (API first); Contracts (HTTP, Port, Migration); File-by-file change list › api
@@ -18,12 +18,17 @@ scope:
 - `TemplateCatalog.mark_used` port; `ExtractionService.submit` calls it with the clock time after `repository.add` succeeds, never when `add` fails. Marking a deleted template is a no-op
 - regenerate `openapi.json` (`make openapi`); the README route table mentions `search`
 - tests: API (search matches, case, literal wildcards, `total`, `last_used_at` null/kept), repository (`mark_used`, escaping), extractions service (marks on success only), end to end (submit → template `last_used_at` equals extraction `created_at`), migration upgrade/downgrade
-files: apps/api/src/formlens/templates/**, apps/api/src/formlens/migrations/versions/v0002_template_last_used.py, apps/api/src/formlens/extractions/domain/ports.py, apps/api/src/formlens/extractions/adapters/template_catalog.py, apps/api/src/formlens/extractions/service_layer/service.py, apps/api/openapi.json, apps/api/tests/templates/**, apps/api/tests/extractions/**, apps/api/tests/test_migrations.py, apps/api/README.md
+files: packages/api-client/src/generated/**, apps/api/src/formlens/database.py, apps/api/src/formlens/templates/**, apps/api/src/formlens/migrations/versions/v0002_template_last_used.py, apps/api/src/formlens/extractions/domain/ports.py, apps/api/src/formlens/extractions/adapters/template_catalog.py, apps/api/src/formlens/extractions/service_layer/service.py, apps/api/openapi.json, apps/api/tests/templates/**, apps/api/tests/extractions/**, apps/api/tests/test_migrations.py, apps/api/README.md
+review fixes (SDD review, NOT READY):
+- AC22 for non-ASCII names: register a Unicode casefold SQL function in `Database._on_connect` and use it on both sides of the match (`repository.py`); `search` of "łódź" or "ŁÓDŹ" finds "Łódź Faktura"; `%`, `_` and `\` stay literal; remove the "ASCII only" caveat from the OpenAPI description and docstring (regenerate `openapi.json`, then the api-client with `npm run generate -w @form-lens/api-client`)
+- tests: non-ASCII, empty `?search=` and whitespace-only search in `tests/templates/test_api.py` and `test_repository.py`
+- `mark_used` is best-effort: when it raises after `repository.add` has committed, `submit` logs it once with `log.exception` and still returns 202; test it with a `FakeTemplateCatalog` that raises
+- confirm `make api-check` (oasdiff) exit code and report it
 notes: do not edit `v0001_initial.py` (`api-v0.1.0` is released); templates must not import extractions (import-linter); Problem Details and `operation_id` rules apply; `make check` and `make api-check` (oasdiff: additive only) must pass
 
 ### T2: Regenerate the API client
 project: @form-lens/api-client
-status: draft
+status: review
 depends_on: [T1]
 acceptance: AC22, AC23
 plan: Contracts (Generated client); File-by-file change list › @form-lens/api-client
@@ -35,7 +40,7 @@ notes: never edit `src/generated` by hand; `generate:check` must pass
 
 ### T3: App shell, navigation and live API status
 project: @form-lens/studio
-status: draft
+status: review
 depends_on: []
 acceptance: AC1, AC2, AC3, AC4, AC5, AC24, AC25
 plan: High-level approach (Studio, shell and status polling); File-by-file change list › @form-lens/studio (globals, layouts, `components/layout/*`, `lib/api-health.ts`, `app/api/formlens-status`, placeholders)
@@ -52,7 +57,7 @@ notes: the API client is server-only (`lib/formlens-api.ts`); Studio code rules 
 
 ### T4: Forms list with search, paging and last-used date
 project: @form-lens/studio
-status: draft
+status: review
 depends_on: [T2, T3]
 acceptance: AC6, AC7, AC8, AC9, AC10, AC11, AC12, AC18, AC20
 plan: High-level approach (list in URL params, toast after redirect); File-by-file change list › @form-lens/studio (`app/(shell)/forms/page.tsx`, `loading.tsx`, `load-templates`, `template-card`, `template-list`, `template-search`, `template-pager`)
@@ -68,7 +73,7 @@ notes: depends on T3 because it replaces T3's minimal `/forms` page
 
 ### T5: Create, edit and delete a template
 project: @form-lens/studio
-status: draft
+status: in-progress
 depends_on: [T2, T3]
 acceptance: AC12, AC13, AC14, AC15, AC16, AC17, AC18, AC19, AC20, AC21, AC24
 plan: High-level approach (react-hook-form + Zod, Server Actions); Contracts (Studio Zod schema); File-by-file change list › @form-lens/studio (`schemas/`, `utils/template-mapping`, `server/load-template`, `server/template-actions`, `server/map-service-error`, editor components, `forms/new`, `forms/[id]/edit`, `not-found`)
@@ -82,12 +87,23 @@ scope:
 - unknown id → `not-found.tsx` with a link back to Forms
 - phone width: field rows stack
 - tests: schema, mapping, `load-template`, actions and `map-service-error` unit tests; editor stories (create empty, edit filled, add/remove/reorder updates the preview, choice without values, duplicate keys, phone width)
-files: apps/studio/package.json, package-lock.json, apps/studio/app/(shell)/forms/new/**, apps/studio/app/(shell)/forms/[id]/**, apps/studio/features/templates/schemas/**, apps/studio/features/templates/utils/**, apps/studio/features/templates/server/load-template.ts, apps/studio/features/templates/server/load-template.test.ts, apps/studio/features/templates/server/template-actions*, apps/studio/features/templates/server/map-service-error*, apps/studio/features/templates/components/template-editor*, apps/studio/features/templates/components/field-row*, apps/studio/features/templates/components/response-preview*, apps/studio/features/templates/components/delete-template-dialog*
-notes: user-facing error text is Polish (`map-service-error.ts`), the logs carry the raw error; server actions return typed responses validated with Zod
+files: apps/studio/package.json, package-lock.json, apps/studio/app/(shell)/forms/new/**, apps/studio/app/(shell)/forms/[id]/**, apps/studio/features/templates/schemas/**, apps/studio/features/templates/utils/**, apps/studio/features/templates/server/load-template.ts, apps/studio/features/templates/server/load-template.test.ts, apps/studio/features/templates/server/template-actions*, apps/studio/features/templates/server/map-service-error*, apps/studio/features/templates/components/template-editor*, apps/studio/features/templates/components/field-row*, apps/studio/features/templates/components/response-preview*, apps/studio/features/templates/components/delete-template-dialog*, apps/studio/features/templates/components/action-toast*, apps/studio/features/templates/components/template-list*, apps/studio/features/templates/components/template-card*, apps/studio/features/templates/server/load-templates*, apps/studio/lib/api-health*.ts, apps/studio/app/api/formlens-status/**, apps/studio/components/layout/**, apps/studio/app/(shell)/forms/**, apps/studio/tests/e2e/**, apps/studio/.storybook/**
+review fixes (SDD review, NOT READY) — this task carries all Studio fixes so they land in one pass (the files overlap across T3, T4 and T5):
+- AC14, AC15: a refused submit shows its messages at once (duplicate key, choice without allowed values, invalid key format, min above max) and announces them (`aria-live` or focus on the first error); the messages never describe the previous state. Add a story that clicks "Create form" and asserts the message without a further edit
+- the API-error banner on the edit page is cleared when a later submit is refused client-side
+- fix the hydration mismatch of `SortableItem` (random ids in `data-value` and `aria-describedby`): stable ids (`useId` or the field id) on server and client; give the drag handle an accessible name
+- English UI text: the Polish messages of `map-service-error.ts` and the "not found" copy become English; constitution §7 already says so
+- toasts through a toast cookie (nextjs-rules toast-cookie pattern) instead of `?created=1|saved=1|deleted=1`; `action-toast` reads and clears the cookie
+- `app/(shell)/forms/loading.tsx` applies to the list only: move the list page and its `loading.tsx` into a route group (e.g. `forms/(list)/`) so `/forms/new` and `/forms/[id]/edit` show no list skeleton; "not found" then returns 404 if the framework allows it
+- the header vertical `Separator` (`components/layout/app-header.tsx`) spans the height of the toggle and the breadcrumbs, not a short stub
+- nextjs-rules in `load-templates.ts`, `lib/api-health.ts`, `app/api/formlens-status/route.ts`: `import "server-only"`, `createLogger({ module })`, `statusCode:` in logs, and the list shows a fixed user-safe message, never the API `title`
+- tests: add MSW and `mimicry-js` (`npm install -D msw mimicry-js -w @form-lens/studio`), replace `vi.mock` and `fetch` stubs of HTTP in the Studio tests with MSW handlers and builders (`template-fixtures.ts` becomes builders); add an AC5 test (theme choice survives a reload, e.g. in Playwright `forms.e2e.ts`) and a page-level phone-width check for `/forms`
+- optional, if cheap: const enum objects instead of string-literal unions; stories for the new layout components
+notes: the user-facing text is English (`map-service-error.ts`), the logs carry the raw error; server actions return typed responses validated with Zod
 
 ### T6: End-to-end forms flow
 project: @form-lens/studio
-status: draft
+status: review
 depends_on: [T3, T4, T5]
 acceptance: AC1, AC3, AC12, AC18, AC20
 plan: File-by-file change list › @form-lens/studio (`tests/e2e/forms.e2e.ts`); Risks (E2E needs a running API)

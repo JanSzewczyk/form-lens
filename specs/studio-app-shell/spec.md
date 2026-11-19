@@ -1,7 +1,7 @@
 # Feature: Studio App Shell
 
 **Branch:** feature/studio-app-shell
-**Status:** planned  <!-- draft → clarified → planned → in-progress → done; each /sdd command advances it -->
+**Status:** in-progress  <!-- draft → clarified → planned → in-progress → done; each /sdd command advances it -->
 **Type:** feat  <!-- feat | fix | chore | refactor | docs -->
 **Owner:** JanSzewczyk
 **Created:** 2026-11-18
@@ -34,31 +34,31 @@ Studio users get the application foundation from the FormLens design (the naviga
 
 <!-- Concrete, measurable. Each AC maps to one test. Ids are stable: never renumber or reuse one. -->
 
-- [ ] AC1: given any Studio page → the side navigation shows Forms, New document and Jobs, and the item of the current section is marked as current.
-- [ ] AC2: given the navigation is open → clicking the toggle hides it and the toggle reports it collapsed; clicking again shows it.
-- [ ] AC3: given the API answers its health check → the status box shows "API connected" and the API address; given it does not → it shows the API as unavailable.
-- [ ] AC4: given the user clicks New document or Jobs → a placeholder page in the shell says the section is coming.
-- [ ] AC5: given the user switches the theme → every page renders in dark (or light) colors and the choice survives a reload.
-- [ ] AC6: given 3 stored templates → the Forms page shows 3 cards with name, description, "N fields" and the last-used date, and the count "3 forms".
-- [ ] AC7: given a template never used for an extraction → its card shows "Never used".
-- [ ] AC8: given templates "VAT invoice" and "Lease agreement" and the search "invoice" → only "VAT invoice" is listed; the search is case-insensitive and matches part of the name.
-- [ ] AC9: given more templates than fit one page → the user can load the next page and sees all of them.
-- [ ] AC10: given no templates → the Forms page shows an empty state with a way to create the first form.
-- [ ] AC11: given the API is unavailable → the Forms page shows an error message instead of the list, and the shell still works.
-- [ ] AC12: given the create page with name "Invoice" and one field `invoice_number` of type text → Create form stores the template and returns to the Forms list, which shows the new template and a "Form created" message.
-- [ ] AC13: given an empty name or no fields → Create form / Save form is refused and the missing input is pointed out next to it.
+- [x] AC1: given any Studio page → the side navigation shows Forms, New document and Jobs, and the item of the current section is marked as current.
+- [x] AC2: given the navigation is open → clicking the toggle hides it and the toggle reports it collapsed; clicking again shows it.
+- [x] AC3: given the API answers its health check → the status box shows "API connected" and the API address; given it does not → it shows the API as unavailable.
+- [x] AC4: given the user clicks New document or Jobs → a placeholder page in the shell says the section is coming.
+- [x] AC5: given the user switches the theme → every page renders in dark (or light) colors and the choice survives a reload.
+- [x] AC6: given 3 stored templates → the Forms page shows 3 cards with name, description, "N fields" and the last-used date, and the count "3 forms".
+- [x] AC7: given a template never used for an extraction → its card shows "Never used".
+- [x] AC8: given templates "VAT invoice" and "Lease agreement" and the search "invoice" → only "VAT invoice" is listed; the search is case-insensitive and matches part of the name.
+- [x] AC9: given more templates than fit one page → the user can load the next page and sees all of them.
+- [x] AC10: given no templates → the Forms page shows an empty state with a way to create the first form.
+- [x] AC11: given the API is unavailable → the Forms page shows an error message instead of the list, and the shell still works.
+- [x] AC12: given the create page with name "Invoice" and one field `invoice_number` of type text → Create form stores the template and returns to the Forms list, which shows the new template and a "Form created" message.
+- [x] AC13: given an empty name or no fields → Create form / Save form is refused and the missing input is pointed out next to it.
 - [ ] AC14: given two fields with the same key → saving is refused with a message on the duplicate key.
 - [ ] AC15: given a field of type choice with no allowed values → saving is refused with a message on that field.
-- [ ] AC16: given fields added, removed or reordered → the API response preview shows the keys in the same order with their types.
-- [ ] AC17: given the user clicks Edit on a template → the edit page shows its name, description and fields, including required, allowed values, minimum, maximum and pattern.
-- [ ] AC18: given a changed template → Save form stores it, its version goes up by one, and the list shows the new data.
-- [ ] AC19: given the API rejects a save (validation error) → the user sees the API's message and the entered data stays in the form.
-- [ ] AC20: given the user clicks Delete and confirms → the template is removed and the user is back on the Forms page without it; cancelling the dialog changes nothing.
-- [ ] AC21: given the user opens a template that does not exist → a "not found" page with a link back to Forms is shown.
-- [ ] AC22: given the API: `GET /v1/templates?search=inv` → only templates whose name contains "inv" (case-insensitive), with `total` counting only those.
-- [ ] AC23: given a template with extractions → the API returns its `last_used_at` as the creation time of its newest extraction; with none → `null`.
-- [ ] AC24: given a phone-width screen → the navigation collapses, pages have no horizontal scroll and the field editor rows stack.
-- [ ] AC25: given a Studio page left open → the API status is checked again every 60 seconds without a reload, so it changes to unavailable (or back to connected) within 60 seconds of the API going down (or up); checks pause while the browser tab is hidden and run once when it becomes visible again.
+- [x] AC16: given fields added, removed or reordered → the API response preview shows the keys in the same order with their types.
+- [x] AC17: given the user clicks Edit on a template → the edit page shows its name, description and fields, including required, allowed values, minimum, maximum and pattern.
+- [x] AC18: given a changed template → Save form stores it, its version goes up by one, and the list shows the new data.
+- [x] AC19: given the API rejects a save (validation error) → the user sees the API's message and the entered data stays in the form.
+- [x] AC20: given the user clicks Delete and confirms → the template is removed and the user is back on the Forms page without it; cancelling the dialog changes nothing.
+- [x] AC21: given the user opens a template that does not exist → a "not found" page with a link back to Forms is shown.
+- [x] AC22: given the API: `GET /v1/templates?search=inv` → only templates whose name contains "inv" (case-insensitive), with `total` counting only those.
+- [x] AC23: given a template with extractions → the API returns its `last_used_at` as the creation time of its newest extraction; with none → `null`.
+- [x] AC24: given a phone-width screen → the navigation collapses, pages have no horizontal scroll and the field editor rows stack.
+- [x] AC25: given a Studio page left open → the API status is checked again every 60 seconds without a reload, so it changes to unavailable (or back to connected) within 60 seconds of the API going down (or up); checks pause while the browser tab is hidden and run once when it becomes visible again.
 
 ## Edge cases
 

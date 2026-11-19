@@ -44,9 +44,16 @@ class TemplateService:
             raise TemplateNotFound(template_id)
         return template
 
-    def page(self, *, limit: int, offset: int) -> tuple[list[Template], int]:
-        """Return one page of templates and the total."""
-        return self._repository.page(limit=limit, offset=offset)
+    def page(self, *, search: str | None = None, limit: int, offset: int) -> tuple[list[Template], int]:
+        """Return one page of templates and the total.
+
+        `search`, when given, keeps the templates whose name contains it, ignoring case; the total counts only those.
+        """
+        return self._repository.page(search=search, limit=limit, offset=offset)
+
+    def mark_used(self, template_id: UUID, at: datetime) -> None:
+        """Record that an extraction was created with the template at `at`; nothing happens when it is gone."""
+        self._repository.mark_used(template_id, at)
 
     def replace(self, template_id: UUID, draft: TemplateDraft) -> Template:
         """Replace a template's content; its version goes up by one.

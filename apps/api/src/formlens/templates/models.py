@@ -171,7 +171,10 @@ class TemplateDraft:
 
 @dataclass(frozen=True, slots=True)
 class Template:
-    """A stored template. `version` starts at 1 and grows by one with every replacement."""
+    """A stored template. `version` starts at 1 and grows by one with every replacement.
+
+    `last_used_at` is when its newest extraction was created; None until one was.
+    """
 
     id: UUID
     name: str
@@ -180,6 +183,7 @@ class Template:
     created_at: datetime
     updated_at: datetime
     description: str = ""
+    last_used_at: datetime | None = None
 
     def __post_init__(self) -> None:
         """Refuse a template that breaks a rule."""

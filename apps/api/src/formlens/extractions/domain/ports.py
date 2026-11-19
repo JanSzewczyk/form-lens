@@ -129,6 +129,10 @@ class TemplateCatalog(Protocol):
         """
         ...
 
+    def mark_used(self, template_id: UUID, at: datetime) -> None:
+        """Record that an extraction was created with the template at `at`; nothing happens when it is gone."""
+        ...
+
 
 class Deadline(Protocol):
     """Runs one job and gives up waiting for it after a time, without being able to stop it."""

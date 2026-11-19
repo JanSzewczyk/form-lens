@@ -55,6 +55,7 @@ class ExtractionService:
         snapshot = self._catalog.snapshot(template_id)
         extraction = Extraction.new(uuid.uuid7(), snapshot, self._clock())
         self._repository.add(extraction, content, max_pending=self._max_pending)
+        self._catalog.mark_used(template_id, extraction.created_at)
         log.info(
             "extraction_enqueued",
             extraction_id=str(extraction.id),

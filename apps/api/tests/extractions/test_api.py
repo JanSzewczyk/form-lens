@@ -93,6 +93,65 @@ def test_a_submitted_document_is_accepted_with_202_and_a_location_and_is_pending
     assert client.get(response.headers["Location"]).json() == body
 
 
+def test_a_submission_sets_the_templates_last_used_date_to_the_extractions_creation_time(
+    client: TestClient,
+) -> None:
+    used = make_template(client)
+    unused = make_template(client)
+    assert used["last_used_at"] is None
+
+    first = submit(client, used["id"]).json()
+    after_first = client.get(f"/v1/templates/{used['id']}").json()["last_used_at"]
+    second = submit(client, used["id"]).json()
+
+    assert after_first == first["created_at"]
+    assert client.get(f"/v1/templates/{used['id']}").json()["last_used_at"] == second["created_at"]
+    assert client.get(f"/v1/templates/{unused['id']}").json()["last_used_at"] is None
+
+
+def test_the_last_used_date_is_a_utc_timestamp_written_like_the_other_dates_of_the_template(
+    client: TestClient,
+) -> None:
+    template = make_template(client)
+    submit(client, template["id"])
+
+    fetched = client.get(f"/v1/templates/{template['id']}").json()
+
+    last_used = datetime.fromisoformat(fetched["last_used_at"])
+    assert last_used.utcoffset() == timedelta(0)
+    assert fetched["last_used_at"][-1] == fetched["created_at"][-1] == "Z"
+    assert last_used >= datetime.fromisoformat(fetched["created_at"])
+
+
+def test_a_submission_marks_only_its_own_template(client: TestClient) -> None:
+    first = make_template(client)
+    second = make_template(client)
+    submit(client, first["id"])
+
+    listed = {item["id"]: item["last_used_at"] for item in client.get("/v1/templates").json()["items"]}
+
+    assert listed[first["id"]] is not None
+    assert listed[second["id"]] is None
+
+
+def test_a_refused_submission_leaves_the_templates_last_used_date_empty(client: TestClient) -> None:
+    template = make_template(client)
+
+    assert submit(client, template["id"], b"").status_code == 400
+
+    assert client.get(f"/v1/templates/{template['id']}").json()["last_used_at"] is None
+
+
+def test_the_last_used_date_is_listed_with_the_template_and_survives_a_replacement(client: TestClient) -> None:
+    template = make_template(client)
+    created_at = submit(client, template["id"]).json()["created_at"]
+
+    client.put(f"/v1/templates/{template['id']}", json=template_body(name="Renamed"))
+
+    listed = client.get("/v1/templates", params={"search": "renamed"}).json()
+    assert [(item["name"], item["last_used_at"]) for item in listed["items"]] == [("Renamed", created_at)]
+
+
 def test_a_job_goes_from_pending_to_completed_with_a_result_that_fits_the_template(
     app: FastAPI, client: TestClient
 ) -> None:

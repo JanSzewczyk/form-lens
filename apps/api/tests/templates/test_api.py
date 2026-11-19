@@ -1,6 +1,7 @@
 """The templates endpoints, through HTTP and a real SQLite file."""
 
 import json
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -294,6 +295,171 @@ def test_the_default_page_size_comes_from_the_settings(settings: Settings) -> No
 )
 def test_a_bad_page_request_is_a_422(client: TestClient, params: dict[str, Any]) -> None:
     assert client.get(URL, params=params).status_code == 422
+
+
+def names_of(page: dict[str, Any]) -> list[str]:
+    return [item["name"] for item in page["items"]]
+
+
+def test_a_search_lists_only_templates_whose_name_contains_the_text_and_counts_only_those(
+    client: TestClient,
+) -> None:
+    for name in ("VAT invoice", "Lease agreement", "Proforma Invoice 2"):
+        create(client, name=name)
+
+    page = client.get(URL, params={"search": "inv"}).json()
+
+    assert names_of(page) == ["VAT invoice", "Proforma Invoice 2"]
+    assert page["total"] == 2
+
+
+@pytest.mark.parametrize("search", ["INV", "iNvOiCe", "inv"], ids=["upper", "mixed", "lower"])
+def test_a_search_ignores_case(client: TestClient, search: str) -> None:
+    create(client, name="VAT invoice")
+    create(client, name="Lease agreement")
+
+    page = client.get(URL, params={"search": search}).json()
+
+    assert names_of(page) == ["VAT invoice"]
+
+
+def test_a_search_matches_a_part_of_the_name_anywhere_in_it(client: TestClient) -> None:
+    create(client, name="Tax invoice")
+
+    assert [client.get(URL, params={"search": text}).json()["total"] for text in ("Tax", "invoice", "x in")] == [1] * 3
+
+
+@pytest.mark.parametrize(
+    ("search", "expected"),
+    [("%", ["100% sure"]), ("_", ["a_b"]), ("\\", ["back\\slash"]), ("0%", ["100% sure"]), ("a_b", ["a_b"])],
+    ids=["percent", "underscore", "backslash", "percent-after-text", "underscore-inside-text"],
+)
+def test_a_search_takes_percent_underscore_and_backslash_literally(
+    client: TestClient, search: str, expected: list[str]
+) -> None:
+    for name in ("100% sure", "100 sure", "a_b", "axb", "back\\slash", "backslash"):
+        create(client, name=name)
+
+    page = client.get(URL, params={"search": search}).json()
+
+    assert names_of(page) == expected
+    assert page["total"] == len(expected)
+
+
+def test_a_search_with_no_match_returns_an_empty_page_with_a_zero_total(client: TestClient) -> None:
+    create(client, name="Invoice")
+
+    page = client.get(URL, params={"search": "lease"}).json()
+
+    assert (page["items"], page["total"]) == ([], 0)
+
+
+def test_the_total_of_a_search_counts_every_match_across_pages(client: TestClient) -> None:
+    for i in range(3):
+        create(client, name=f"Invoice {i}")
+    create(client, name="Lease")
+
+    page = client.get(URL, params={"search": "invoice", "limit": 1, "offset": 1}).json()
+
+    assert (names_of(page), page["total"], page["limit"], page["offset"]) == (["Invoice 1"], 3, 1, 1)
+
+
+def test_an_empty_search_keeps_every_template(client: TestClient) -> None:
+    create(client, name="Invoice")
+    create(client, name="Lease")
+
+    page = client.get(URL, params={"search": ""}).json()
+
+    assert (len(page["items"]), page["total"]) == (2, 2)
+
+
+def test_a_search_of_a_hundred_characters_is_accepted_and_a_longer_one_is_a_422(client: TestClient) -> None:
+    accepted = client.get(URL, params={"search": "a" * 100})
+    refused = client.get(URL, params={"search": "a" * 101})
+
+    assert accepted.status_code == 200
+    assert refused.status_code == 422
+    assert refused.json()["type"] == problem_type("validation-error")
+
+
+def test_a_search_made_of_a_space_is_not_trimmed_and_matches_names_with_a_space(client: TestClient) -> None:
+    for name in ("Invoice", "VAT invoice"):
+        create(client, name=name)
+
+    page = client.get(URL, params={"search": " "}).json()
+
+    assert (names_of(page), page["total"]) == (["VAT invoice"], 1)
+
+
+@pytest.mark.parametrize(
+    ("search", "expected"),
+    [("%_", ["a%_b"]), ("\\%", ["a\\%b"]), ("\\_", ["a\\_b"]), ("\\\\", ["a\\\\b"]), ("a%", ["a%_b", "a%b"])],
+    ids=["percent-underscore", "backslash-percent", "backslash-underscore", "two-backslashes", "text-then-percent"],
+)
+def test_a_search_with_combined_wildcards_and_backslashes_matches_them_literally(
+    client: TestClient, search: str, expected: list[str]
+) -> None:
+    for name in ("a%_b", "a%b", "a\\%b", "a\\_b", "a\\\\b", "axyb", "a\\b"):
+        create(client, name=name)
+
+    page = client.get(URL, params={"search": search}).json()
+
+    assert names_of(page) == expected
+    assert page["total"] == len(expected)
+
+
+def test_a_page_past_the_matches_is_empty_and_still_counts_every_match(client: TestClient) -> None:
+    for name in ("Invoice 1", "Lease", "Invoice 2"):
+        create(client, name=name)
+
+    page = client.get(URL, params={"search": "invoice", "limit": 5, "offset": 4}).json()
+
+    assert (page["items"], page["total"]) == ([], 2)
+
+
+def test_a_search_of_a_hundred_multibyte_characters_is_accepted(client: TestClient) -> None:
+    name = "\u017c" * MAX_TEMPLATE_NAME_LENGTH
+    create(client, name=name)
+
+    page = client.get(URL, params={"search": name}).json()
+
+    assert (names_of(page), page["total"]) == ([name], 1)
+
+
+def test_a_search_folds_the_case_of_ascii_letters_only(client: TestClient) -> None:
+    """The documented limit: SQLite `lower()` folds A-Z, so a letter such as Z with a dot must match in its own case."""
+    name = "Faktura \u017b\u00d3\u0141W"
+    create(client, name=name)
+
+    ascii_other_case = client.get(URL, params={"search": "FAKTURA"}).json()
+    same_case = client.get(URL, params={"search": "\u017b\u00d3\u0141W"}).json()
+    other_case = client.get(URL, params={"search": "\u017c\u00f3\u0142w"}).json()
+
+    assert names_of(ascii_other_case) == [name]
+    assert names_of(same_case) == [name]
+    assert (other_case["items"], other_case["total"]) == ([], 0)
+
+
+def test_a_new_template_has_no_last_used_date(client: TestClient) -> None:
+    created = create(client)
+
+    listed = client.get(URL).json()["items"][0]
+
+    assert created["last_used_at"] is None
+    assert client.get(f"{URL}/{created['id']}").json()["last_used_at"] is None
+    assert listed["last_used_at"] is None
+
+
+def test_replacing_a_template_keeps_its_last_used_date(app: FastAPI, client: TestClient) -> None:
+    created = create(client, name="Before")
+    used_at = datetime(2026, 2, 3, 4, 5, 6, tzinfo=UTC)
+    app.state.template_repository.mark_used(UUID(created["id"]), used_at)
+
+    replaced = client.put(f"{URL}/{created['id']}", json=template_body(name="After")).json()
+
+    assert replaced["name"] == "After"
+    assert datetime.fromisoformat(replaced["last_used_at"]) == used_at
+    assert datetime.fromisoformat(client.get(f"{URL}/{created['id']}").json()["last_used_at"]) == used_at
 
 
 # --- replace ---------------------------------------------------------------------------------------

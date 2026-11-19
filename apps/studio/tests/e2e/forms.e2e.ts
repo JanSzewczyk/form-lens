@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { type APIRequestContext, expect, test as it, type Page } from "@playwright/test";
 
 /**
@@ -11,14 +13,15 @@ import { type APIRequestContext, expect, test as it, type Page } from "@playwrig
  *     DB_URL=sqlite:////tmp/e2e.db uv run python -m formlens migrate
  *     DB_URL=sqlite:////tmp/e2e.db uv run uvicorn --factory tests.schemathesis_app:create_schemathesis_app --port 8000
  *     # apps/studio
- *     npm run build && npm run test:e2e -- --project=chromium
+ *     SKIP_ENV_VALIDATION=1 npm run build
+ *     FORMLENS_API_URL=http://127.0.0.1:8000 npm run test:e2e -- --project=chromium
  */
 
 const API_URL = (process.env.FORMLENS_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 const API_HOST = new URL(API_URL).host;
 
 /** A name no stored form has, so the test finds its own card and removes only what it created. */
-const FORM_NAME = `Invoice e2e ${Date.now()}`;
+const FORM_NAME = `Invoice e2e ${randomUUID()}`;
 const FORM_NAME_EDITED = `${FORM_NAME} edited`;
 
 async function isApiReady(request: APIRequestContext): Promise<boolean> {
@@ -33,6 +36,7 @@ async function isApiReady(request: APIRequestContext): Promise<boolean> {
 /** Removes every form this run named, whatever state a failed test left it in. */
 async function deleteFormsCreatedByRun(request: APIRequestContext) {
   const response = await request.get(`${API_URL}/v1/templates`, { params: { limit: 100, search: FORM_NAME } });
+  expect(response.ok()).toBe(true);
   const { items } = (await response.json()) as { items: Array<{ id: string }> };
 
   for (const { id } of items) {
@@ -43,7 +47,7 @@ async function deleteFormsCreatedByRun(request: APIRequestContext) {
 /** Shows the form in the list: the search narrows the list to it, wherever the paging would put it. */
 async function searchForm(page: Page, name: string) {
   await page.getByRole("searchbox", { name: "Search forms" }).fill(name);
-  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("button", { exact: true, name: "Search" }).click();
   await expect(page).toHaveURL(/\/forms\?q=/);
 }
 
@@ -79,13 +83,20 @@ it.describe("Forms", () => {
   // One browser runs the flow: the browsers would create and delete forms in the same API at the same time.
   it.describe.configure({ mode: "serial" });
 
-  it.beforeEach(async ({ browserName, request }, testInfo) => {
+  // Probed once: an API that goes away in the middle of the flow fails the test that needs it, it does not skip it.
+  let hasApi = false;
+
+  it.beforeAll(async ({ request }) => {
+    hasApi = await isApiReady(request);
+  });
+
+  it.beforeEach(({ browserName }, testInfo) => {
     testInfo.skip(browserName !== "chromium", "the flow runs in one browser");
-    testInfo.skip(!(await isApiReady(request)), `no API answers at ${API_URL}; the form flow is manual then`);
+    testInfo.skip(!hasApi, `no API answers at ${API_URL}; the form flow is manual then`);
   });
 
   it.afterAll(async ({ request }) => {
-    if (await isApiReady(request)) {
+    if (hasApi) {
       await deleteFormsCreatedByRun(request);
     }
   });
@@ -101,7 +112,7 @@ it.describe("Forms", () => {
     await page.getByLabel("Description of field 1").fill("The number printed at the top of the invoice");
     await page.getByRole("button", { name: "Create form" }).click();
 
-    await expect(page).toHaveURL(/\/forms/);
+    await expect(page).toHaveURL(/\/forms(\?.*)?$/);
     await expect(page.getByText("Form created")).toBeVisible();
 
     await searchForm(page, FORM_NAME);
@@ -119,17 +130,18 @@ it.describe("Forms", () => {
     await expect(page.getByLabel("Key of field 1")).toHaveValue("invoice_number");
 
     await page.getByLabel("Name", { exact: true }).fill(FORM_NAME_EDITED);
-    await page.getByLabel("Description", { exact: false }).first().fill("Edited by the end-to-end test");
+    await page.locator("#template-description").fill("Edited by the end-to-end test");
     await page.getByRole("button", { name: "Add field" }).click();
     await page.getByLabel("Key of field 2").fill("total");
     await page.getByRole("button", { name: "Save form" }).click();
 
-    await expect(page).toHaveURL(/\/forms/);
+    await expect(page).toHaveURL(/\/forms(\?.*)?$/);
     await expect(page.getByText("Form saved")).toBeVisible();
 
     await searchForm(page, FORM_NAME_EDITED);
     const card = page.getByRole("listitem").filter({ hasText: FORM_NAME_EDITED });
     await expect(card).toContainText("2 fields");
+    await expect(card).toContainText("Edited by the end-to-end test");
 
     await page.getByRole("link", { name: `Edit ${FORM_NAME_EDITED}` }).click();
     await expect(page.getByText("Version 2.")).toBeVisible();
@@ -153,11 +165,9 @@ it.describe("Forms", () => {
     await page.getByRole("button", { exact: true, name: "Delete" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Delete form" }).click();
 
-    await expect(page).toHaveURL(/\/forms/);
+    await expect(page).toHaveURL(/\/forms(\?.*)?$/);
     await expect(page.getByRole("heading", { level: 1, name: "Forms" })).toBeVisible();
     await expect(page.getByText("Form deleted")).toBeVisible();
-
-    await expect(page.getByText(FORM_NAME_EDITED)).toBeHidden();
 
     await page.goto(`/forms?q=${encodeURIComponent(FORM_NAME_EDITED)}`);
     await expect(page.getByText("No forms match your search")).toBeVisible();

@@ -39,6 +39,16 @@ describe("package entry point", () => {
     expect(new URL(requestedUrl(mock)).searchParams.get("limit")).toBe("5");
   });
 
+  it("puts the template search term into the URL", async () => {
+    const mock = stubFetch({ items: [], total: 0 });
+    configureApiClient({ baseUrl: "http://localhost:8000" });
+
+    await listTemplates({ search: "inv" });
+
+    expect(requestedUrl(mock)).toContain("search=inv");
+    expect(new URL(requestedUrl(mock)).searchParams.get("search")).toBe("inv");
+  });
+
   it("sends a repeated status filter as separate parameters, not a comma list", async () => {
     const mock = stubFetch({ items: [] });
     configureApiClient({ baseUrl: "http://localhost:8000" });

@@ -2,17 +2,32 @@ import type { TemplateResponse } from "@form-lens/api-client";
 import { listTemplates } from "~/lib/formlens-api";
 import logger from "~/lib/logger";
 
+const PAGE_SIZE = 12;
+
+export type TemplatesQuery = {
+  /** Part of a template name; an empty string means no search. */
+  search: string;
+  /** 1-based page number. */
+  page: number;
+};
+
 export type TemplatesResult =
-  | { status: "ok"; templates: Array<TemplateResponse>; total: number }
+  | { status: "ok"; templates: Array<TemplateResponse>; total: number; pageSize: number }
   | { status: "unavailable"; reason: string };
 
-/** The first page of form templates. A down or failing API is a result, not an exception, so the page still renders. */
-export async function loadTemplates(): Promise<TemplatesResult> {
+/**
+ * One page of form templates, optionally filtered by name. A down or failing API is a result, not an exception,
+ * so the page still renders.
+ */
+export async function loadTemplates({ search, page }: TemplatesQuery): Promise<TemplatesResult> {
   try {
-    const response = await listTemplates({ limit: 20 }, { cache: "no-store" });
+    const response = await listTemplates(
+      { limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE, search: search === "" ? undefined : search },
+      { cache: "no-store" }
+    );
 
     if (response.status === 200) {
-      return { status: "ok", templates: response.data.items, total: response.data.total };
+      return { pageSize: PAGE_SIZE, status: "ok", templates: response.data.items, total: response.data.total };
     }
     logger.withMetadata({ problem: response.data, status: response.status }).warn("templates_request_refused");
     return { reason: response.data.title, status: "unavailable" };

@@ -208,7 +208,10 @@ describe("templateFormSchema, the limits of the API at their edges", () => {
       ]
     });
 
-    expect(Object.keys(issuesByPath(values)).sort()).toEqual(["fields.1.key", "fields.3.key"]);
+    expect(Object.keys(issuesByPath(values)).sort((a, b) => a.localeCompare(b))).toEqual([
+      "fields.1.key",
+      "fields.3.key"
+    ]);
   });
 
   it("does not call two untyped keys a duplicate; each one asks for its own key (AC13)", () => {

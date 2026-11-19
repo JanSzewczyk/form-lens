@@ -43,6 +43,13 @@ async function callApi(
   }
 }
 
+const templateIdSchema = z.uuid();
+
+/** An id that is not a UUID cannot name a template; it never reaches the API, whose path it would otherwise reshape. */
+function isTemplateId(templateId: string): boolean {
+  return templateIdSchema.safeParse(templateId).success;
+}
+
 const problemSchema = z.object({
   detail: z.string().nullish(),
   errors: z
@@ -80,6 +87,10 @@ export async function updateTemplate(templateId: string, input: TemplateFormValu
     return mapInvalidInput(parsed.error);
   }
 
+  if (!isTemplateId(templateId)) {
+    return mapProblem(404, undefined);
+  }
+
   const failure = await callApi("updateTemplate", 200, (options) =>
     replaceTemplate(templateId, toTemplateBody(parsed.data), options)
   );
@@ -92,6 +103,10 @@ export async function updateTemplate(templateId: string, input: TemplateFormValu
 }
 
 export async function deleteTemplate(templateId: string): Promise<TemplateActionFailure> {
+  if (!isTemplateId(templateId)) {
+    return mapProblem(404, undefined);
+  }
+
   const failure = await callApi("deleteTemplate", 204, (options) => deleteTemplateRequest(templateId, options));
   if (failure) {
     return failure;

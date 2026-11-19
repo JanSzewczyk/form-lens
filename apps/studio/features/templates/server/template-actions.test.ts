@@ -375,3 +375,28 @@ describe("the server checks the input again, whatever the form did (AC13, AC14, 
     );
   });
 });
+
+describe.each([
+  ["a malformed id", "not-a-uuid"],
+  ["a path traversal", "../../health/ready"],
+  ["an encoded traversal", "%2e%2e/health"],
+  ["an empty id", ""]
+])("the template id of the update and delete actions, %s", (_name, templateId) => {
+  it("refuses an update as not found without calling the API or redirecting", async () => {
+    const result = await updateTemplate(templateId, templateFormValues());
+
+    expect(result).toMatchObject({ kind: "not-found", success: false });
+    expect(api.replaceTemplate).not.toHaveBeenCalled();
+    expect(navigation.redirect).not.toHaveBeenCalled();
+    expect(navigation.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("refuses a delete as not found without calling the API or redirecting", async () => {
+    const result = await deleteTemplate(templateId);
+
+    expect(result).toMatchObject({ kind: "not-found", success: false });
+    expect(api.deleteTemplate).not.toHaveBeenCalled();
+    expect(navigation.redirect).not.toHaveBeenCalled();
+    expect(navigation.revalidatePath).not.toHaveBeenCalled();
+  });
+});

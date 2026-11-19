@@ -37,7 +37,10 @@ describe("loadTemplates", () => {
 
     await loadTemplates({ page: 1, search: "invoice" });
 
-    expect(listTemplates).toHaveBeenCalledWith({ limit: 12, offset: 0, search: "invoice" }, { cache: "no-store" });
+    expect(listTemplates).toHaveBeenCalledWith(
+      { limit: 12, offset: 0, search: "invoice" },
+      expect.objectContaining({ cache: "no-store" })
+    );
   });
 
   it("leaves the search out when it is empty", async () => {
@@ -103,5 +106,37 @@ describe("loadTemplates", () => {
       templates: [],
       total: 30
     });
+  });
+
+  it("gives the request a 3 s timeout signal", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    listTemplates.mockResolvedValue({ data: { items: [], limit: 12, offset: 0, total: 0 }, status: 200 });
+
+    await loadTemplates(firstPage);
+
+    expect(timeout).toHaveBeenCalledWith(3000);
+    expect(listTemplates.mock.calls[0]?.[1]).toMatchObject({ signal: timeout.mock.results[0]?.value });
+  });
+
+  it("reports a stalled API as unavailable once the timeout signal aborts, instead of waiting for it", async () => {
+    vi.useFakeTimers();
+    try {
+      listTemplates.mockImplementation(
+        (_params: unknown, options: { signal: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            options.signal.addEventListener("abort", () => reject(options.signal.reason));
+          })
+      );
+
+      const pending = loadTemplates(firstPage);
+      await vi.advanceTimersByTimeAsync(3000);
+
+      await expect(pending).resolves.toEqual({
+        reason: "The FormLens API does not answer.",
+        status: "unavailable"
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

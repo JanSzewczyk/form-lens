@@ -3,6 +3,8 @@ import { listTemplates } from "~/lib/formlens-api";
 import logger from "~/lib/logger";
 
 const PAGE_SIZE = 12;
+/** A stalled API must not leave the page on its loading skeleton; same limit as the health check. */
+const REQUEST_TIMEOUT_MS = 3000;
 const REFUSED_REASON = "The FormLens API refused the request.";
 
 export type TemplatesQuery = {
@@ -26,7 +28,7 @@ export async function loadTemplates({ search, page }: TemplatesQuery): Promise<T
   try {
     const response = await listTemplates(
       { limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE, search: trimmedSearch === "" ? undefined : trimmedSearch },
-      { cache: "no-store" }
+      { cache: "no-store", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }
     );
 
     if (response.status === 200) {

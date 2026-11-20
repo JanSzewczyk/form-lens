@@ -32,8 +32,12 @@ export function parseAllowedValues(text: string): Array<string> {
     .filter((line) => line.length > 0);
 }
 
+/** Plain decimal syntax only: `Number()` alone would also take `0x10`, `0b11` and `0o7`, which the API reads differently. */
+const DECIMAL_PATTERN = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+
 function isNumeric(text: string): boolean {
-  return text.trim() !== "" && Number.isFinite(Number(text));
+  const trimmed = text.trim();
+  return DECIMAL_PATTERN.test(trimmed) && Number.isFinite(Number(trimmed));
 }
 
 const fieldSchema = z

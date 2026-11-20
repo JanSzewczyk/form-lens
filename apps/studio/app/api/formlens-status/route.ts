@@ -1,7 +1,12 @@
+import "server-only";
+
 import { NextResponse } from "next/server";
+
 import { checkApiHealth, readApiHost } from "~/lib/api-health";
-import type { ApiHealth } from "~/lib/api-health-types";
-import logger from "~/lib/logger";
+import { type ApiHealth, ApiHealthStatus } from "~/lib/api-health-types";
+import { createLogger } from "~/lib/logger";
+
+const log = createLogger({ module: "api-status-route" });
 
 /** The answer is the API's state right now; it must never be prerendered or cached. */
 export const dynamic = "force-dynamic";
@@ -17,8 +22,8 @@ export async function GET() {
   try {
     health = await checkApiHealth();
   } catch (error) {
-    logger.withError(error).warn("api_status_route_failed");
-    health = { host: readApiHost(), status: "unavailable" };
+    log.withError(error).warn("API status route failed");
+    health = { host: readApiHost(), status: ApiHealthStatus.unavailable };
   }
 
   return NextResponse.json(health, { headers: NO_STORE });

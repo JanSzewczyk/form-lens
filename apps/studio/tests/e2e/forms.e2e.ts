@@ -51,6 +51,27 @@ async function searchForm(page: Page, name: string) {
   await expect(page).toHaveURL(/\/forms\?q=/);
 }
 
+/**
+ * The ids a server render puts into the field rows must be the same on every render, or the browser's render
+ * differs from the server's (a hydration mismatch). Two requests of the page are compared, which a random id fails.
+ */
+async function expectStableRowIds(page: Page) {
+  const rowIds = async () => {
+    const html = await (await page.request.get(page.url())).text();
+    return [...html.matchAll(/data-slot="sortable-item"[^>]*/g)].map(([tag]) => ({
+      describedBy: /aria-describedby="([^"]*)"/.exec(tag)?.[1],
+      value: /data-value="([^"]*)"/.exec(tag)?.[1]
+    }));
+  };
+
+  const first = await rowIds();
+  const second = await rowIds();
+
+  expect(first.length).toBeGreaterThan(0);
+  expect(second).toEqual(first);
+  expect(JSON.stringify(first)).not.toContain("DndDescribedBy");
+}
+
 it.describe("App shell", () => {
   it("marks the current section in the side navigation (AC1)", async ({ page }) => {
     await page.goto("/forms");
@@ -79,6 +100,118 @@ it.describe("App shell", () => {
   });
 });
 
+it.describe("Theme and phone width", () => {
+  it("keeps the theme the user chose after a reload (AC5)", async ({ page }) => {
+    await page.goto("/forms");
+    const toggle = page.getByRole("button", { name: /Click to switch to/ });
+
+    // system -> light -> dark
+    await toggle.click();
+    await toggle.click();
+    await expect(page.locator("html")).toHaveClass(/\bdark\b/);
+
+    await page.reload();
+
+    await expect(page.locator("html")).toHaveClass(/\bdark\b/);
+    await expect(page.getByRole("button", { name: /Current: Dark theme/ })).toBeVisible();
+  });
+
+  it("has no horizontal scroll on /forms at a phone width of 375 px (AC24)", async ({ page }) => {
+    await page.setViewportSize({ height: 800, width: 375 });
+    await page.goto("/forms");
+    await expect(page.getByRole("heading", { level: 1, name: "Forms" })).toBeVisible();
+
+    const { clientWidth, scrollWidth } = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth
+    }));
+
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+  });
+
+  it("collapses the navigation at a phone width (AC24)", async ({ page }) => {
+    await page.setViewportSize({ height: 800, width: 375 });
+    await page.goto("/forms");
+
+    await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeHidden();
+  });
+});
+
+/**
+ * A refused submit must show its message at once. This runs against the production build on purpose: the React
+ * Compiler memoized the field rows so that they showed the message only after the next edit, and the Storybook tests,
+ * which do not run the compiler, passed all the time. The editor needs no API until the form is valid.
+ */
+it.describe("Form editor refuses a submit with a message at once (AC13, AC14, AC15)", () => {
+  async function addFieldWithKey(page: Page, number: number, key: string) {
+    await page.getByRole("button", { name: number === 1 ? "Add first field" : "Add field" }).click();
+    await page.getByLabel(`Key of field ${number}`).fill(key);
+  }
+
+  it.beforeEach(async ({ page }) => {
+    await page.goto("/forms/new");
+    await page.getByLabel("Name", { exact: true }).fill("Invoice");
+  });
+
+  it("names the duplicate key and focuses it (AC14)", async ({ page }) => {
+    await addFieldWithKey(page, 1, "total");
+    await addFieldWithKey(page, 2, "total");
+
+    await page.getByRole("button", { name: "Create form" }).click();
+
+    await expect(page.getByText("This key is already used by another field")).toBeVisible();
+    await expect(page.getByLabel("Key of field 2")).toBeFocused();
+    await expect(page).toHaveURL(/\/forms\/new$/);
+  });
+
+  it("points at a choice field with no allowed values (AC15)", async ({ page }) => {
+    await addFieldWithKey(page, 1, "status");
+    await page.getByRole("combobox", { name: "Type of field 1" }).click();
+    await page.getByRole("option", { name: "Choice" }).click();
+
+    await page.getByRole("button", { name: "Create form" }).click();
+
+    await expect(page.getByText("Add at least one allowed value")).toBeVisible();
+  });
+
+  it("points at a key that breaks the format, and follows the key as it is corrected", async ({ page }) => {
+    await addFieldWithKey(page, 1, "Bad Key");
+
+    await page.getByRole("button", { name: "Create form" }).click();
+
+    await expect(page.getByText(/Use lower case letters/)).toBeVisible();
+    await page.getByLabel("Key of field 1").fill("good_key");
+    await expect(page.getByText(/Use lower case letters/)).toBeHidden();
+  });
+
+  it("points at a minimum above the maximum", async ({ page }) => {
+    await addFieldWithKey(page, 1, "amount");
+    await page.getByRole("combobox", { name: "Type of field 1" }).click();
+    await page.getByRole("option", { exact: true, name: "Number" }).click();
+    await page.getByRole("button", { name: "Advanced" }).last().click();
+    await page.getByLabel("Minimum of field 1").fill("9");
+    await page.getByLabel("Maximum of field 1").fill("5");
+
+    await page.getByRole("button", { name: "Create form" }).click();
+
+    await expect(page.getByText("The minimum is above the maximum")).toBeVisible();
+  });
+
+  it("points at a missing key, then shows the next refusal and not the previous one", async ({ page }) => {
+    await page.getByRole("button", { name: "Add first field" }).click();
+    await page.getByRole("button", { name: "Create form" }).click();
+    await expect(page.getByText("Enter a key for this field")).toBeVisible();
+
+    await page.getByLabel("Key of field 1").fill("total");
+    await page.getByRole("button", { name: "Add field" }).click();
+    await page.getByLabel("Key of field 2").fill("total");
+    await page.getByRole("button", { name: "Create form" }).click();
+
+    await expect(page.getByText("This key is already used by another field")).toBeVisible();
+    await expect(page.getByText("Enter a key for this field")).toBeHidden();
+  });
+});
+
 it.describe("Forms", () => {
   // One browser runs the flow: the browsers would create and delete forms in the same API at the same time.
   it.describe.configure({ mode: "serial" });
@@ -99,6 +232,35 @@ it.describe("Forms", () => {
     if (hasApi) {
       await deleteFormsCreatedByRun(request);
     }
+  });
+
+  it("answers 404 with the not-found page for a form that does not exist (AC21)", async ({ page }) => {
+    const response = await page.goto(`/forms/${randomUUID()}/edit`);
+
+    expect(response?.status()).toBe(404);
+    await expect(page.getByText("Form not found")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Back to Forms" })).toHaveAttribute("href", "/forms");
+  });
+
+  it("shows the message of the API, and drops it when the next submit is refused here (AC19)", async ({ page }) => {
+    await page.goto("/forms/new");
+    await page.getByLabel("Name", { exact: true }).fill(`${FORM_NAME} rejected`);
+    await page.getByRole("button", { name: "Add first field" }).click();
+    await page.getByLabel("Key of field 1").fill("code");
+    await page.getByRole("button", { name: "Advanced" }).last().click();
+    // The API compiles the pattern; the editor only checks its length, so this reaches the API and comes back as a 422.
+    await page.getByLabel("Pattern of field 1").fill("(");
+    await page.getByRole("button", { name: "Create form" }).click();
+
+    const banner = page.getByRole("alert").filter({ hasText: /The API rejected the form/ });
+    await expect(banner).toBeVisible();
+    await expect(page.getByLabel("Name", { exact: true })).toHaveValue(`${FORM_NAME} rejected`);
+
+    await page.getByLabel("Name", { exact: true }).fill("");
+    await page.getByRole("button", { name: "Create form" }).click();
+
+    await expect(page.getByText("Enter a name for the form")).toBeVisible();
+    await expect(banner).toBeHidden();
   });
 
   it("creates a form and lists it (AC12)", async ({ page }) => {
@@ -128,6 +290,7 @@ it.describe("Forms", () => {
     await expect(page.getByRole("heading", { name: "Edit form" })).toBeVisible();
     await expect(page.getByText("Version 1.")).toBeVisible();
     await expect(page.getByLabel("Key of field 1")).toHaveValue("invoice_number");
+    await expectStableRowIds(page);
 
     await page.getByLabel("Name", { exact: true }).fill(FORM_NAME_EDITED);
     await page.locator("#template-description").fill("Edited by the end-to-end test");

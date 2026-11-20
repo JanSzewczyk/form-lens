@@ -3,7 +3,7 @@
 import { Status, StatusIndicator, StatusLabel } from "@szum-tech/design-system";
 import * as React from "react";
 
-import type { ApiHealth } from "~/lib/api-health-types";
+import { type ApiHealth, ApiHealthStatus } from "~/lib/api-health-types";
 
 const STATUS_ENDPOINT = "/api/formlens-status";
 const DEFAULT_INTERVAL_MS = 60_000;
@@ -21,7 +21,7 @@ function isApiHealth(value: unknown): value is ApiHealth {
     typeof value === "object" &&
     value !== null &&
     "status" in value &&
-    (value.status === "connected" || value.status === "unavailable") &&
+    (value.status === ApiHealthStatus.connected || value.status === ApiHealthStatus.unavailable) &&
     "host" in value &&
     typeof value.host === "string"
   );
@@ -59,12 +59,12 @@ export function ApiStatusLive({ initial, intervalMs = DEFAULT_INTERVAL_MS }: Api
       try {
         const next = await fetchHealth(signal);
         if (latest === controller) {
-          setHealth((current) => next ?? { host: current.host, status: "unavailable" });
+          setHealth((current) => next ?? { host: current.host, status: ApiHealthStatus.unavailable });
         }
       } catch {
         // A timeout still counts as "unavailable"; only a superseded or unmounted request is dropped.
         if (latest === controller) {
-          setHealth((current) => ({ host: current.host, status: "unavailable" }));
+          setHealth((current) => ({ host: current.host, status: ApiHealthStatus.unavailable }));
         }
       }
     }
@@ -101,7 +101,7 @@ export function ApiStatusLive({ initial, intervalMs = DEFAULT_INTERVAL_MS }: Api
     };
   }, [intervalMs]);
 
-  const isConnected = health.status === "connected";
+  const isConnected = health.status === ApiHealthStatus.connected;
 
   return (
     <div className="flex min-w-0 flex-col gap-2" role="status">

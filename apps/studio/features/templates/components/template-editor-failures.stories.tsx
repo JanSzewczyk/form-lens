@@ -1,7 +1,7 @@
 import { expect, fn, screen, waitFor } from "storybook/test";
 import preview from "~/.storybook/preview";
 import type { TemplateActionFailure } from "~/features/templates/schemas/template-action-result";
-import { templateFormValues } from "~/features/templates/utils/template-fixtures";
+import { templateFormValuesBuilder } from "~/features/templates/utils/template.builder";
 
 import { TemplateEditor } from "./template-editor";
 
@@ -12,7 +12,7 @@ const DESCRIPTION_LABEL = /^Description \(optional\)$/;
 
 function unavailable(): Promise<TemplateActionFailure> {
   return Promise.resolve({
-    error: "Interfejs API jest niedostępny.",
+    error: "The API is unavailable.",
     fieldErrors: {},
     kind: "unavailable",
     success: false
@@ -27,7 +27,7 @@ const meta = preview.meta({
 
 export const ApiUnavailable = meta.story({
   args: {
-    initialValues: templateFormValues({ description: "Typed by the user" }),
+    initialValues: templateFormValuesBuilder.one({ overrides: { description: "Typed by the user" } }),
     mode: "edit",
     onDeleteAction: fn(unavailable),
     onSubmitAction: fn(unavailable)
@@ -39,7 +39,7 @@ ApiUnavailable.test(
   async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: "Save form" }));
 
-    await expect(await canvas.findByRole("alert")).toHaveTextContent("Interfejs API jest niedostępny.");
+    await expect(await canvas.findByRole("alert")).toHaveTextContent("The API is unavailable.");
     await expect(canvas.queryByRole("link", { name: "Back to Forms" })).not.toBeInTheDocument();
     await expect(canvas.getByLabelText(DESCRIPTION_LABEL)).toHaveValue("Typed by the user");
     await waitFor(() => expect(canvas.getByRole("button", { name: "Save form" })).toBeEnabled());
@@ -59,7 +59,7 @@ ApiUnavailable.test("Lets the user try again after a failed delete (AC20)", asyn
   await userEvent.click(canvas.getByRole("button", { name: "Delete" }));
   await userEvent.click(await screen.findByRole("button", { name: "Delete form" }));
 
-  await expect(await canvas.findByRole("alert")).toHaveTextContent("Interfejs API jest niedostępny.");
+  await expect(await canvas.findByRole("alert")).toHaveTextContent("The API is unavailable.");
   await waitFor(() => expect(canvas.getByRole("button", { name: "Delete" })).toBeEnabled());
   await expect(canvas.getByLabelText("Name")).toHaveValue("Invoice");
 });

@@ -1,6 +1,6 @@
 import { expect } from "storybook/test";
 import preview from "~/.storybook/preview";
-import { fieldValues } from "~/features/templates/utils/template-fixtures";
+import { fieldValuesBuilder } from "~/features/templates/utils/template.builder";
 
 import { ResponsePreview } from "./response-preview";
 
@@ -15,9 +15,9 @@ NoFields.test("Shows an empty object", async ({ canvas }) => {
 export const ThreeFields = meta.story({
   args: {
     fields: [
-      fieldValues({ key: "total", type: "number" }),
-      fieldValues({ key: "issued_on", type: "date" }),
-      fieldValues({ key: "status", type: "choice" })
+      fieldValuesBuilder.one({ overrides: { key: "total", type: "number" } }),
+      fieldValuesBuilder.one({ overrides: { key: "issued_on", type: "date" } }),
+      fieldValuesBuilder.one({ overrides: { key: "status", type: "choice" } })
     ]
   }
 });

@@ -1,13 +1,12 @@
 import { FieldType, type TemplateResponse } from "@form-lens/api-client";
 import { expect } from "storybook/test";
 import preview from "~/.storybook/preview";
-import type { TemplatesResult } from "~/features/templates/server/load-templates";
+import { type TemplatesResult, TemplatesStatus } from "~/features/templates/types/templates-result";
 
 import { TemplateList } from "./template-list";
 
 const NOW = new Date("2026-11-19T12:00:00Z");
 
-/** Test data without a builder: `mimicry-js` and Faker are not Studio dependencies. */
 function buildTemplate(overrides: Partial<TemplateResponse>): TemplateResponse {
   return {
     created_at: "2026-01-02T08:00:00Z",
@@ -50,10 +49,10 @@ const THREE_TEMPLATES: Array<TemplateResponse> = [
 
 /** A successful answer; the type keeps `status` a literal so the stories type-check against the result union. */
 function okResult(templates: Array<TemplateResponse>, total: number): TemplatesResult {
-  return { pageSize: 12, status: "ok", templates, total };
+  return { pageSize: 12, status: TemplatesStatus.ok, templates, total };
 }
 
-const UNAVAILABLE: TemplatesResult = { reason: "The FormLens API does not answer.", status: "unavailable" };
+const UNAVAILABLE: TemplatesResult = { status: TemplatesStatus.unavailable };
 
 const meta = preview.meta({
   args: {

@@ -15,7 +15,7 @@ import {
 } from "@szum-tech/design-system";
 import { ArrowDownIcon, ArrowUpIcon, ChevronDownIcon, GripVerticalIcon, Trash2Icon } from "lucide-react";
 import * as React from "react";
-import { Controller, useFormContext, useWatch } from "react-hook-form";
+import { Controller, useFormContext, useFormState, useWatch } from "react-hook-form";
 
 import { TemplateFieldType, type TemplateFormValues } from "~/features/templates/schemas/template-form-schema";
 
@@ -29,6 +29,7 @@ const TYPE_LABEL: Record<TemplateFieldType, string> = {
 };
 
 interface FieldRowProps {
+  /** The stable id of the row (not the id react-hook-form generates, which differs between server and browser). */
   fieldId: string;
   index: number;
   isFirst: boolean;
@@ -43,12 +44,8 @@ interface FieldRowProps {
  * wide enough; the row measures itself (container query), so the layout follows the room it has, not the screen.
  */
 export function FieldRow({ fieldId, index, isFirst, isLast, onMoveDown, onMoveUp, onRemove }: FieldRowProps) {
-  const {
-    control,
-    formState: { errors },
-    register,
-    setValue
-  } = useFormContext<TemplateFormValues>();
+  const { control, register, setValue } = useFormContext<TemplateFormValues>();
+  const { errors } = useFormState({ control, name: "fields" });
   const rowErrors = errors.fields?.[index];
   const type = useWatch({ control, name: `fields.${index}.type` });
   const advanced = useWatch({ control, name: `fields.${index}` });
@@ -56,6 +53,7 @@ export function FieldRow({ fieldId, index, isFirst, isLast, onMoveDown, onMoveUp
   const [isAdvancedOpen, setAdvancedOpen] = React.useState(hasAdvancedValue);
   const hasAdvancedError = Boolean(rowErrors?.minimum || rowErrors?.maximum || rowErrors?.pattern);
   const number = index + 1;
+  const reorderHintId = `${fieldId}-reorder-hint`;
   const hasRange = type === TemplateFieldType.number || type === TemplateFieldType.integer;
   const isText = type === TemplateFieldType.text;
 
@@ -79,13 +77,19 @@ export function FieldRow({ fieldId, index, isFirst, isLast, onMoveDown, onMoveUp
 
   return (
     <SortableItem
+      aria-describedby={reorderHintId}
       className="bg-card @container flex min-w-0 flex-col gap-3 rounded-lg border p-3"
       data-testid={`field-row-${number}`}
       value={fieldId}
     >
+      <span className="sr-only" id={reorderHintId}>
+        Drag the handle to reorder this field, or use the move up and move down buttons.
+      </span>
       <div className="flex flex-wrap items-center gap-2">
-        <SortableItemHandle className="text-muted-foreground touch-none">
-          <GripVerticalIcon aria-hidden="true" className="size-5" />
+        <SortableItemHandle asChild>
+          <button aria-label={`Reorder field ${number}`} className="text-muted-foreground touch-none" type="button">
+            <GripVerticalIcon aria-hidden="true" className="size-5" />
+          </button>
         </SortableItemHandle>
         <span className="text-mute font-semibold">Field {number}</span>
         <label className="text-body-sm ml-auto flex items-center gap-2">

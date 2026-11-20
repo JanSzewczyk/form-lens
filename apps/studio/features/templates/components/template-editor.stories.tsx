@@ -1,7 +1,7 @@
 import { expect, fn, screen, waitFor } from "storybook/test";
 import preview from "~/.storybook/preview";
 import type { TemplateActionFailure } from "~/features/templates/schemas/template-action-result";
-import { fieldValues, templateFormValues } from "~/features/templates/utils/template-fixtures";
+import { fieldValuesBuilder, templateFormValuesBuilder } from "~/features/templates/utils/template.builder";
 import { emptyTemplateFormValues } from "~/features/templates/utils/template-mapping";
 
 import { TemplateEditor } from "./template-editor";
@@ -14,7 +14,7 @@ function neverAnswers() {
 }
 
 function failure(overrides: Partial<TemplateActionFailure>): TemplateActionFailure {
-  return { error: "Błąd", fieldErrors: {}, kind: "validation", success: false, ...overrides };
+  return { error: "Error", fieldErrors: {}, kind: "validation", success: false, ...overrides };
 }
 
 const meta = preview.meta({
@@ -75,7 +75,13 @@ CreateInvoice.test(
     await userEvent.click(canvas.getByRole("button", { name: "Create form" }));
 
     await expect(args.onSubmitAction).toHaveBeenCalledWith(
-      templateFormValues({ description: "", fields: [fieldValues({ key: "invoice_number" })], name: "Invoice" })
+      templateFormValuesBuilder.one({
+        overrides: {
+          description: "",
+          fields: [fieldValuesBuilder.one({ overrides: { key: "invoice_number" } })],
+          name: "Invoice"
+        }
+      })
     );
   }
 );
@@ -87,12 +93,14 @@ CreateInvoice.test("Cancel leads back to the list without saving", async ({ args
 
 export const ThreeFields = meta.story({
   args: {
-    initialValues: templateFormValues({
-      fields: [
-        fieldValues({ key: "invoice_number" }),
-        fieldValues({ key: "total", type: "number" }),
-        fieldValues({ key: "issued_on", type: "date" })
-      ]
+    initialValues: templateFormValuesBuilder.one({
+      overrides: {
+        fields: [
+          fieldValuesBuilder.one({ overrides: { key: "invoice_number" } }),
+          fieldValuesBuilder.one({ overrides: { key: "total", type: "number" } }),
+          fieldValuesBuilder.one({ overrides: { key: "issued_on", type: "date" } })
+        ]
+      }
     }),
     mode: "create",
     onSubmitAction: fn(neverAnswers)
@@ -128,8 +136,14 @@ ThreeFields.test(
 
 export const DuplicateKeys = meta.story({
   args: {
-    initialValues: templateFormValues({
-      fields: [fieldValues({ key: "total" }), fieldValues({ key: "date" }), fieldValues({ key: "total" })]
+    initialValues: templateFormValuesBuilder.one({
+      overrides: {
+        fields: [
+          fieldValuesBuilder.one({ overrides: { key: "total" } }),
+          fieldValuesBuilder.one({ overrides: { key: "date" } }),
+          fieldValuesBuilder.one({ overrides: { key: "total" } })
+        ]
+      }
     }),
     mode: "create",
     onSubmitAction: fn(neverAnswers)
@@ -142,13 +156,16 @@ DuplicateKeys.test(
     await userEvent.click(canvas.getByRole("button", { name: "Create form" }));
 
     await expect(await canvas.findByText("This key is already used by another field")).toBeVisible();
+    await expect(canvas.getByLabelText("Key of field 3")).toHaveFocus();
     await expect(args.onSubmitAction).not.toHaveBeenCalled();
   }
 );
 
 export const ChoiceWithoutValues = meta.story({
   args: {
-    initialValues: templateFormValues({ fields: [fieldValues({ key: "status" })] }),
+    initialValues: templateFormValuesBuilder.one({
+      overrides: { fields: [fieldValuesBuilder.one({ overrides: { key: "status" } })] }
+    }),
     mode: "create",
     onSubmitAction: fn(neverAnswers)
   }
@@ -166,19 +183,23 @@ ChoiceWithoutValues.test(
   }
 );
 
-const filled = templateFormValues({
-  description: "Supplier invoices",
-  fields: [
-    fieldValues({
-      description: "Number at the top right",
-      key: "invoice_number",
-      pattern: "^INV-[0-9]+$",
-      required: true
-    }),
-    fieldValues({ key: "total", maximum: "10000", minimum: "0.5", type: "number" }),
-    fieldValues({ allowedValues: "paid\nopen", key: "status", type: "choice" })
-  ],
-  name: "VAT invoice"
+const filled = templateFormValuesBuilder.one({
+  overrides: {
+    description: "Supplier invoices",
+    fields: [
+      fieldValuesBuilder.one({
+        overrides: {
+          description: "Number at the top right",
+          key: "invoice_number",
+          pattern: "^INV-[0-9]+$",
+          required: true
+        }
+      }),
+      fieldValuesBuilder.one({ overrides: { key: "total", maximum: "10000", minimum: "0.5", type: "number" } }),
+      fieldValuesBuilder.one({ overrides: { allowedValues: "paid\nopen", key: "status", type: "choice" } })
+    ],
+    name: "VAT invoice"
+  }
 });
 
 /** The delete action of the edit stories; `args` is a union of both modes and has no `onDeleteAction` on its create side. */
@@ -236,12 +257,12 @@ EditFilled.test("Confirming the delete dialog calls the delete action (AC20)", a
 
 export const SaveRejected = meta.story({
   args: {
-    initialValues: templateFormValues({ name: "Invoice" }),
+    initialValues: templateFormValuesBuilder.one({ overrides: { name: "Invoice" } }),
     mode: "edit",
     onDeleteAction: fn(neverAnswers),
     onSubmitAction: fn(async () =>
       failure({
-        error: "Interfejs API odrzucił formularz. Popraw zaznaczone pola.",
+        error: "The API rejected the form. Fix the marked fields.",
         fieldErrors: { "fields.0.key": "String should match pattern" }
       })
     )
@@ -254,7 +275,7 @@ SaveRejected.test(
     await userEvent.type(canvas.getByLabelText(DESCRIPTION_LABEL), "Typed before the save");
     await userEvent.click(canvas.getByRole("button", { name: "Save form" }));
 
-    await expect(await canvas.findByText("Interfejs API odrzucił formularz. Popraw zaznaczone pola.")).toBeVisible();
+    await expect(await canvas.findByText("The API rejected the form. Fix the marked fields.")).toBeVisible();
     await expect(canvas.getByText("String should match pattern")).toBeVisible();
     await expect(canvas.getByLabelText("Name")).toHaveValue("Invoice");
     await expect(canvas.getByLabelText(DESCRIPTION_LABEL)).toHaveValue("Typed before the save");
@@ -264,10 +285,10 @@ SaveRejected.test(
 
 export const DeletedElsewhere = meta.story({
   args: {
-    initialValues: templateFormValues(),
+    initialValues: templateFormValuesBuilder.one(),
     mode: "edit",
-    onDeleteAction: fn(async () => failure({ error: "Ten formularz już nie istnieje.", kind: "not-found" })),
-    onSubmitAction: fn(async () => failure({ error: "Ten formularz już nie istnieje.", kind: "not-found" }))
+    onDeleteAction: fn(async () => failure({ error: "This form no longer exists.", kind: "not-found" })),
+    onSubmitAction: fn(async () => failure({ error: "This form no longer exists.", kind: "not-found" }))
   }
 });
 
@@ -276,7 +297,7 @@ DeletedElsewhere.test(
   async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: "Save form" }));
 
-    await expect(await canvas.findByText(/Ten formularz już nie istnieje/)).toBeVisible();
+    await expect(await canvas.findByText(/This form no longer exists/)).toBeVisible();
     await expect(canvas.getByRole("link", { name: "Back to Forms" })).toHaveAttribute("href", "/forms");
   }
 );
@@ -285,7 +306,7 @@ DeletedElsewhere.test("Deleting reports the form as not found (edge case)", asyn
   await userEvent.click(canvas.getByRole("button", { name: "Delete" }));
   await userEvent.click(await screen.findByRole("button", { name: "Delete form" }));
 
-  await expect(await canvas.findByText(/Ten formularz już nie istnieje/)).toBeVisible();
+  await expect(await canvas.findByText(/This form no longer exists/)).toBeVisible();
 });
 
 export const PhoneWidth = meta.story({
@@ -328,14 +349,31 @@ ThreeFields.test(
     await userEvent.click(canvas.getByRole("button", { name: "Create form" }));
 
     await expect(args.onSubmitAction).toHaveBeenCalledWith(
-      templateFormValues({
-        fields: [
-          fieldValues({ key: "total", type: "number" }),
-          fieldValues({ key: "invoice_number" }),
-          fieldValues({ key: "issued_on", type: "date" })
-        ]
+      templateFormValuesBuilder.one({
+        overrides: {
+          fields: [
+            fieldValuesBuilder.one({ overrides: { key: "total", type: "number" } }),
+            fieldValuesBuilder.one({ overrides: { key: "invoice_number" } }),
+            fieldValuesBuilder.one({ overrides: { key: "issued_on", type: "date" } })
+          ]
+        }
       })
     );
+  }
+);
+
+ThreeFields.test(
+  "Gives each drag handle an accessible name, and the rows keep stable ids (WCAG 4.1.2)",
+  async ({ canvas }) => {
+    await expect(canvas.getByRole("button", { name: "Reorder field 1" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Reorder field 3" })).toBeVisible();
+
+    const rows = canvas.getAllByTestId(/^field-row-/);
+    const ids = rows.map((row) => row.getAttribute("data-value"));
+    await expect(new Set(ids).size).toBe(3);
+    for (const row of rows) {
+      await expect(row.getAttribute("aria-describedby") ?? "").not.toContain("DndDescribedBy");
+    }
   }
 );
 
@@ -443,8 +481,12 @@ ChoiceWithoutValues.test(
 
     await waitFor(() => expect(args.onSubmitAction).toHaveBeenCalledOnce());
     await expect(args.onSubmitAction).toHaveBeenCalledWith(
-      templateFormValues({
-        fields: [fieldValues({ allowedValues: "open\nclosed", key: "status", type: "choice" })]
+      templateFormValuesBuilder.one({
+        overrides: {
+          fields: [
+            fieldValuesBuilder.one({ overrides: { allowedValues: "open\nclosed", key: "status", type: "choice" } })
+          ]
+        }
       })
     );
   }
@@ -459,7 +501,7 @@ SaveRejected.test("Marks the key the API rejected as invalid (AC19)", async ({ c
 });
 
 const rejectedByTheApi = failure({
-  error: "Interfejs API odrzucił formularz. Popraw zaznaczone pola.",
+  error: "The API rejected the form. Fix the marked fields.",
   fieldErrors: {
     "fields.0.maximum": "Input should be a valid number",
     name: "String should have at most 100 characters"
@@ -468,9 +510,11 @@ const rejectedByTheApi = failure({
 
 export const RangeRejected = meta.story({
   args: {
-    initialValues: templateFormValues({
-      fields: [fieldValues({ key: "total", type: "number" })],
-      name: "Invoice"
+    initialValues: templateFormValuesBuilder.one({
+      overrides: {
+        fields: [fieldValuesBuilder.one({ overrides: { key: "total", type: "number" } })],
+        name: "Invoice"
+      }
     }),
     mode: "create",
     onSubmitAction: fn(async () => rejectedByTheApi)
@@ -494,7 +538,7 @@ RangeRejected.test(
 
 export const Saving = meta.story({
   args: {
-    initialValues: templateFormValues(),
+    initialValues: templateFormValuesBuilder.one(),
     mode: "edit",
     onDeleteAction: fn(neverAnswers),
     onSubmitAction: fn(neverAnswers)
@@ -523,8 +567,10 @@ Saving.test("Cancel leads back to the list and calls no action (edge case)", asy
 
 export const FiftyFields = meta.story({
   args: {
-    initialValues: templateFormValues({
-      fields: Array.from({ length: 50 }, (_, index) => fieldValues({ key: `field_${index}` }))
+    initialValues: templateFormValuesBuilder.one({
+      overrides: {
+        fields: fieldValuesBuilder.many(50).map((field, index) => ({ ...field, key: `field_${index}` }))
+      }
     }),
     mode: "create",
     onSubmitAction: fn(neverAnswers)
@@ -576,18 +622,24 @@ const longKey = `a${"b".repeat(63)}`;
 
 export const PhoneWidthLongText = meta.story({
   args: {
-    initialValues: templateFormValues({
-      description: "d".repeat(300),
-      fields: [
-        fieldValues({
-          allowedValues: `${"v".repeat(100)}\nshort`,
-          description: "x".repeat(300),
-          key: longKey,
-          type: "choice"
-        }),
-        fieldValues({ key: `${longKey.slice(0, 63)}c`, maximum: "123456789012345678901234567890", type: "number" })
-      ],
-      name: "N".repeat(100)
+    initialValues: templateFormValuesBuilder.one({
+      overrides: {
+        description: "d".repeat(300),
+        fields: [
+          fieldValuesBuilder.one({
+            overrides: {
+              allowedValues: `${"v".repeat(100)}\nshort`,
+              description: "x".repeat(300),
+              key: longKey,
+              type: "choice"
+            }
+          }),
+          fieldValuesBuilder.one({
+            overrides: { key: `${longKey.slice(0, 63)}c`, maximum: "123456789012345678901234567890", type: "number" }
+          })
+        ],
+        name: "N".repeat(100)
+      }
     }),
     mode: "edit",
     onDeleteAction: fn(neverAnswers),
@@ -615,5 +667,29 @@ PhoneWidthLongText.test(
     }
     await expect(canvas.getByLabelText("Key of field 1").getBoundingClientRect().right).toBeLessThanOrEqual(right);
     await expect(canvas.getByLabelText("Maximum of field 2").getBoundingClientRect().right).toBeLessThanOrEqual(right);
+  }
+);
+
+export const TypedFromScratch = meta.story({
+  args: {
+    initialValues: emptyTemplateFormValues(),
+    mode: "create",
+    onSubmitAction: fn(neverAnswers)
+  }
+});
+
+TypedFromScratch.test(
+  "Shows the message of a duplicate key at once when Create form is clicked, with no further edit (AC14)",
+  async ({ args, canvas, userEvent }) => {
+    await userEvent.type(canvas.getByLabelText("Name", { exact: true }), "Invoice");
+    await userEvent.click(canvas.getByRole("button", { name: "Add first field" }));
+    await userEvent.type(await canvas.findByLabelText("Key of field 1"), "total");
+    await userEvent.click(canvas.getByRole("button", { name: "Add field" }));
+    await userEvent.type(await canvas.findByLabelText("Key of field 2"), "total");
+
+    await userEvent.click(canvas.getByRole("button", { name: "Create form" }));
+
+    await expect(await canvas.findByText("This key is already used by another field")).toBeVisible();
+    await expect(args.onSubmitAction).not.toHaveBeenCalled();
   }
 );

@@ -4,10 +4,12 @@ import * as React from "react";
 import { ApiStatus, ApiStatusFallback } from "~/components/layout/api-status";
 import { AppHeader } from "~/components/layout/app-header";
 import { AppSidebar } from "~/components/layout/app-sidebar";
+import { ActionToast } from "~/features/templates/components/action-toast";
 
 export default function ShellLayout({ children }: LayoutProps<"/">) {
   return (
     <SidebarProvider>
+      <ActionToast />
       <AppSidebar
         status={
           <React.Suspense fallback={<ApiStatusFallback />}>

@@ -2,18 +2,16 @@ import { afterEach, beforeEach, describe, expect, test as it, vi } from "vitest"
 
 const getReadiness = vi.hoisted(() => vi.fn());
 
-vi.mock("server-only", () => ({}));
+// This file keeps the API client on a module mock on purpose: the cases below give the health check an address that
+// cannot be a request URL, so over HTTP (MSW) they would all be "unavailable" and prove nothing about the host.
 vi.mock("~/lib/formlens-api", () => ({ getReadiness }));
-vi.mock("~/lib/logger", () => {
-  const logger = { warn: vi.fn(), withError: vi.fn(), withMetadata: vi.fn() };
-  logger.withError.mockReturnValue(logger);
-  logger.withMetadata.mockReturnValue(logger);
-  return { default: logger };
-});
+vi.mock("~/lib/logger", async () => (await import("~/tests/unit/mock-logger")).loggerModule);
 
 async function loadCheckWithApiUrl(url: string | undefined) {
   vi.resetModules();
   vi.doMock("~/data/env/server", () => ({ env: { FORMLENS_API_URL: url } }));
+  // The reset modules gave the logger mock a new recorder; the check must find it ready to chain.
+  (await import("~/tests/unit/mock-logger")).resetLog();
   return (await import("./api-health")).checkApiHealth;
 }
 

@@ -74,3 +74,71 @@ export const NoCookie = meta.story({ name: "No cookie" });
 NoCookie.test("Shows no toast", async () => {
   await waitFor(() => expect(screen.queryByText(/^Form (created|saved|deleted)$/)).not.toBeInTheDocument());
 });
+
+export const ErrorToast = meta.story({
+  beforeEach() {
+    leaveToastCookie({ message: "Could not do it", type: ToastType.error });
+  },
+  name: "Error toast"
+});
+
+ErrorToast.test("Shows the error message once and clears the cookie", async () => {
+  await expect(await screen.findByText("Could not do it")).toBeVisible();
+  await expect(hasToastCookie()).toBe(false);
+});
+
+export const InfoToast = meta.story({
+  beforeEach() {
+    leaveToastCookie({ message: "Heads up", type: ToastType.info });
+  },
+  name: "Info toast"
+});
+
+InfoToast.test("Shows the info message once", async () => {
+  await expect(await screen.findByText("Heads up")).toBeVisible();
+  await expect(screen.getAllByText("Heads up")).toHaveLength(1);
+});
+
+export const WarningToast = meta.story({
+  beforeEach() {
+    leaveToastCookie({ message: "Careful", type: ToastType.warning });
+  },
+  name: "Warning toast"
+});
+
+WarningToast.test("Shows the warning message once", async () => {
+  await expect(await screen.findByText("Careful")).toBeVisible();
+  await expect(screen.getAllByText("Careful")).toHaveLength(1);
+});
+
+export const UnknownType = meta.story({
+  beforeEach() {
+    document.cookie = `${TOAST_COOKIE_NAME}=${encodeURIComponent(JSON.stringify({ message: "Smuggled", type: "danger" }))}; path=/`;
+  },
+  name: "Unknown type"
+});
+
+UnknownType.test("Shows nothing for a cookie with a type that is not a toast type, and clears it", async () => {
+  await waitFor(() => expect(hasToastCookie()).toBe(false));
+  await expect(screen.queryByText("Smuggled")).not.toBeInTheDocument();
+});
+
+export const AmongOtherCookies = meta.story({
+  beforeEach() {
+    document.cookie = "theme_test=dark; path=/";
+    leaveToastCookie({ message: "Form saved", type: ToastType.success });
+    document.cookie = "zz_test=1; path=/";
+    return () => {
+      document.cookie = "theme_test=; Max-Age=0; path=/";
+      document.cookie = "zz_test=; Max-Age=0; path=/";
+    };
+  },
+  name: "Among other cookies"
+});
+
+AmongOtherCookies.test("Finds the toast cookie wherever it sits and keeps the other cookies", async () => {
+  await expect(await screen.findByText("Form saved")).toBeVisible();
+  await expect(document.cookie).toContain("theme_test=dark");
+  await expect(document.cookie).toContain("zz_test=1");
+  await expect(hasToastCookie()).toBe(false);
+});

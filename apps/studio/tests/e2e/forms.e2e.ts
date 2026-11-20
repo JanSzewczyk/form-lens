@@ -56,16 +56,16 @@ async function searchForm(page: Page, name: string) {
  * differs from the server's (a hydration mismatch). Two requests of the page are compared, which a random id fails.
  */
 async function expectStableRowIds(page: Page) {
-  const rowIds = async () => {
+  async function readRowIds() {
     const html = await (await page.request.get(page.url())).text();
     return [...html.matchAll(/data-slot="sortable-item"[^>]*/g)].map(([tag]) => ({
       describedBy: /aria-describedby="([^"]*)"/.exec(tag)?.[1],
       value: /data-value="([^"]*)"/.exec(tag)?.[1]
     }));
-  };
+  }
 
-  const first = await rowIds();
-  const second = await rowIds();
+  const first = await readRowIds();
+  const second = await readRowIds();
 
   expect(first.length).toBeGreaterThan(0);
   expect(second).toEqual(first);
@@ -334,5 +334,22 @@ it.describe("Forms", () => {
 
     await page.goto(`/forms?q=${encodeURIComponent(FORM_NAME_EDITED)}`);
     await expect(page.getByText("No forms match your search")).toBeVisible();
+  });
+});
+
+it.describe("Loading skeleton of the forms list", () => {
+  const SKELETON_LABEL = "Loading forms";
+
+  it("is part of the /forms response, as a control that the check below can fail", async ({ request }) => {
+    const html = await (await request.get("/forms")).text();
+
+    expect(html).toContain(`aria-label="${SKELETON_LABEL}"`);
+  });
+
+  it("is not part of the /forms/new response", async ({ request }) => {
+    const response = await request.get("/forms/new");
+
+    expect(response.status()).toBe(200);
+    expect(await response.text()).not.toContain(`aria-label="${SKELETON_LABEL}"`);
   });
 });

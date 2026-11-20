@@ -1,6 +1,4 @@
-import { describe, expect, test as it, vi } from "vitest";
-
-vi.mock("server-only", () => ({}));
+import { describe, expect, test as it } from "vitest";
 
 import { templateFormSchema } from "~/features/templates/schemas/template-form-schema";
 
@@ -9,7 +7,7 @@ import { mapInvalidInput, mapProblem, mapUnreachable } from "./map-service-error
 describe("mapProblem", () => {
   it("reports a 404 as not found (edge case: deleted elsewhere)", () => {
     expect(mapProblem(404, { status: 404, title: "Template not found" })).toEqual({
-      error: "Ten formularz już nie istnieje. Mógł zostać usunięty w innym miejscu.",
+      error: "This form no longer exists. It may have been deleted elsewhere.",
       fieldErrors: {},
       kind: "not-found",
       success: false
@@ -32,7 +30,7 @@ describe("mapProblem", () => {
     });
 
     expect(result.kind).toBe("validation");
-    expect(result.error).toBe("Interfejs API odrzucił formularz. Popraw zaznaczone pola.");
+    expect(result.error).toBe("The API rejected the form. Fix the marked fields.");
     expect(result.fieldErrors).toEqual({
       "fields.0.allowedValues": "Too long",
       "fields.0.description": "First wins",
@@ -41,7 +39,7 @@ describe("mapProblem", () => {
     });
   });
 
-  it("shows the detail of an invalid-template next to the Polish text (AC19)", () => {
+  it("shows the detail of an invalid-template next to the English text (AC19)", () => {
     const result = mapProblem(422, {
       detail: "fields[2]: pattern does not compile",
       status: 422,
@@ -50,27 +48,27 @@ describe("mapProblem", () => {
     });
 
     expect(result).toMatchObject({
-      error: "Interfejs API odrzucił formularz: fields[2]: pattern does not compile",
+      error: "The API rejected the form: fields[2]: pattern does not compile",
       fieldErrors: {},
       kind: "validation"
     });
   });
 
   it("keeps the form-level message when there is no detail", () => {
-    expect(mapProblem(422, undefined).error).toBe("Interfejs API odrzucił formularz");
-    expect(mapProblem(400, undefined).error).toBe("Interfejs API nie przyjął formularza.");
+    expect(mapProblem(422, undefined).error).toBe("The API rejected the form");
+    expect(mapProblem(400, undefined).error).toBe("The API did not accept the form.");
   });
 
   it("explains a body that is too large", () => {
     expect(mapProblem(413, { status: 413, title: "Request body too large" })).toMatchObject({
-      error: "Formularz jest zbyt duży, aby go zapisać.",
+      error: "The form is too large to save.",
       kind: "validation"
     });
   });
 
   it("reports any other status as the API being unavailable, without its text", () => {
     expect(mapProblem(503, { detail: "database path /var/db", status: 503, title: "Service not ready" })).toEqual({
-      error: "Interfejs API jest niedostępny. Wpisane dane zostały zachowane, spróbuj ponownie za chwilę.",
+      error: "The API is unavailable. Your input was kept, try again in a moment.",
       fieldErrors: {},
       kind: "unavailable",
       success: false
@@ -132,10 +130,10 @@ describe("mapProblem, the edges of a validation-error (AC19)", () => {
     expect(JSON.stringify(result)).toContain("Input should be a valid dictionary");
   });
 
-  it("keeps the user-facing text Polish and free of the API's internals for a 5xx", () => {
+  it("keeps the user-facing text English and free of the API's internals for a 5xx", () => {
     const result = mapProblem(500, { detail: "Traceback (most recent call last)", status: 500, title: "x" });
 
-    expect(result.error).toMatch(/Interfejs API/);
+    expect(result.error).toMatch(/The API/);
     expect(JSON.stringify(result)).not.toContain("Traceback");
   });
 });

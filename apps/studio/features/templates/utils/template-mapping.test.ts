@@ -1,7 +1,7 @@
 import type { TemplateResponse } from "@form-lens/api-client";
 import { describe, expect, test as it } from "vitest";
 
-import { fieldValues, templateFormValues } from "./template-fixtures";
+import { fieldValuesBuilder, templateFormValuesBuilder } from "~/features/templates/utils/template.builder";
 import { buildResponsePreview, emptyTemplateFormValues, toFormValues, toTemplateBody } from "./template-mapping";
 
 const stored: Pick<TemplateResponse, "description" | "fields" | "name"> = {
@@ -34,7 +34,7 @@ const stored: Pick<TemplateResponse, "description" | "fields" | "name"> = {
 
 describe("toTemplateBody", () => {
   it("maps the Invoice form with one text field to the API body (AC12)", () => {
-    expect(toTemplateBody(templateFormValues())).toEqual({
+    expect(toTemplateBody(templateFormValuesBuilder.one())).toEqual({
       description: "",
       fields: [
         {
@@ -62,10 +62,14 @@ describe("toTemplateBody", () => {
 
   it("drops what the type does not take", () => {
     const body = toTemplateBody(
-      templateFormValues({
-        fields: [
-          fieldValues({ allowedValues: "a", key: "flag", maximum: "3", minimum: "1", pattern: "x", type: "boolean" })
-        ]
+      templateFormValuesBuilder.one({
+        overrides: {
+          fields: [
+            fieldValuesBuilder.one({
+              overrides: { allowedValues: "a", key: "flag", maximum: "3", minimum: "1", pattern: "x", type: "boolean" }
+            })
+          ]
+        }
       })
     );
 
@@ -91,24 +95,34 @@ describe("buildResponsePreview", () => {
   });
 
   it("lists the keys in the order of the fields with their types (AC16)", () => {
-    const fields = [fieldValues({ key: "total", type: "number" }), fieldValues({ key: "issued_on", type: "date" })];
+    const fields = [
+      fieldValuesBuilder.one({ overrides: { key: "total", type: "number" } }),
+      fieldValuesBuilder.one({ overrides: { key: "issued_on", type: "date" } })
+    ];
 
     expect(buildResponsePreview(fields)).toBe('{\n  "total": "number",\n  "issued_on": "date"\n}');
     expect(buildResponsePreview([...fields].reverse())).toBe('{\n  "issued_on": "date",\n  "total": "number"\n}');
   });
 
   it("skips a field whose key is not typed yet", () => {
-    expect(buildResponsePreview([fieldValues({ key: "" }), fieldValues({ key: "a", type: "boolean" })])).toBe(
-      '{\n  "a": "boolean"\n}'
-    );
+    expect(
+      buildResponsePreview([
+        fieldValuesBuilder.one({ overrides: { key: "" } }),
+        fieldValuesBuilder.one({ overrides: { key: "a", type: "boolean" } })
+      ])
+    ).toBe('{\n  "a": "boolean"\n}');
   });
 });
 
 describe("toTemplateBody and toFormValues, the edges", () => {
   it("keeps a bound of zero and a negative bound, which are not 'no bound'", () => {
     const body = toTemplateBody(
-      templateFormValues({
-        fields: [fieldValues({ key: "balance", maximum: "0", minimum: "-5", type: "integer" })]
+      templateFormValuesBuilder.one({
+        overrides: {
+          fields: [
+            fieldValuesBuilder.one({ overrides: { key: "balance", maximum: "0", minimum: "-5", type: "integer" } })
+          ]
+        }
       })
     );
 
@@ -128,27 +142,35 @@ describe("toTemplateBody and toFormValues, the edges", () => {
   it("gives a field the API sent without optional properties an empty, usable row", () => {
     const values = toFormValues({ description: "", fields: [{ name: "flag", type: "boolean" }], name: "Flags" });
 
-    expect(values.fields[0]).toEqual(fieldValues({ key: "flag", type: "boolean" }));
+    expect(values.fields[0]).toEqual(fieldValuesBuilder.one({ overrides: { key: "flag", type: "boolean" } }));
   });
 
   it("loses nothing on the way out and back in for every type (AC17, AC18)", () => {
-    const values = templateFormValues({
-      description: "All six types",
-      fields: [
-        fieldValues({ description: "Top right", key: "invoice_number", pattern: "^INV-[0-9]+$", required: true }),
-        fieldValues({ key: "total", maximum: "10000", minimum: "0.5", type: "number" }),
-        fieldValues({ key: "units", maximum: "9", minimum: "1", type: "integer" }),
-        fieldValues({ key: "paid", type: "boolean" }),
-        fieldValues({ key: "issued_on", type: "date" }),
-        fieldValues({ allowedValues: "paid\nopen\nvoid", key: "status", type: "choice" })
-      ]
+    const values = templateFormValuesBuilder.one({
+      overrides: {
+        description: "All six types",
+        fields: [
+          fieldValuesBuilder.one({
+            overrides: { description: "Top right", key: "invoice_number", pattern: "^INV-[0-9]+$", required: true }
+          }),
+          fieldValuesBuilder.one({ overrides: { key: "total", maximum: "10000", minimum: "0.5", type: "number" } }),
+          fieldValuesBuilder.one({ overrides: { key: "units", maximum: "9", minimum: "1", type: "integer" } }),
+          fieldValuesBuilder.one({ overrides: { key: "paid", type: "boolean" } }),
+          fieldValuesBuilder.one({ overrides: { key: "issued_on", type: "date" } }),
+          fieldValuesBuilder.one({ overrides: { allowedValues: "paid\nopen\nvoid", key: "status", type: "choice" } })
+        ]
+      }
     });
 
     expect(toFormValues({ description: "", ...toTemplateBody(values) })).toEqual(values);
   });
 
   it("sends a pattern with no spaces cut off the ends of it as typed by the user", () => {
-    const body = toTemplateBody(templateFormValues({ fields: [fieldValues({ key: "code", pattern: " ^A B$ " })] }));
+    const body = toTemplateBody(
+      templateFormValuesBuilder.one({
+        overrides: { fields: [fieldValuesBuilder.one({ overrides: { key: "code", pattern: " ^A B$ " } })] }
+      })
+    );
 
     // A space is a character of a regular expression; the stricter reading keeps it.
     expect(body.fields[0]?.pattern).toBe(" ^A B$ ");
@@ -158,10 +180,10 @@ describe("toTemplateBody and toFormValues, the edges", () => {
 describe("buildResponsePreview, after the rows were changed (AC16)", () => {
   it("follows the order of the rows for every type", () => {
     const fields = [
-      fieldValues({ key: "a", type: "boolean" }),
-      fieldValues({ key: "b", type: "choice" }),
-      fieldValues({ key: "c", type: "integer" }),
-      fieldValues({ key: "d", type: "text" })
+      fieldValuesBuilder.one({ overrides: { key: "a", type: "boolean" } }),
+      fieldValuesBuilder.one({ overrides: { key: "b", type: "choice" } }),
+      fieldValuesBuilder.one({ overrides: { key: "c", type: "integer" } }),
+      fieldValuesBuilder.one({ overrides: { key: "d", type: "text" } })
     ];
 
     expect(buildResponsePreview([fields[3], fields[0], fields[2], fields[1]] as typeof fields)).toBe(
@@ -170,7 +192,10 @@ describe("buildResponsePreview, after the rows were changed (AC16)", () => {
   });
 
   it("is valid JSON whose key order is the order of the rows", () => {
-    const preview = buildResponsePreview([fieldValues({ key: "z" }), fieldValues({ key: "a", type: "date" })]);
+    const preview = buildResponsePreview([
+      fieldValuesBuilder.one({ overrides: { key: "z" } }),
+      fieldValuesBuilder.one({ overrides: { key: "a", type: "date" } })
+    ]);
 
     expect(Object.entries(JSON.parse(preview) as Record<string, string>)).toEqual([
       ["z", "text"],

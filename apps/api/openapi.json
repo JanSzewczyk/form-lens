@@ -1347,7 +1347,7 @@
         "operationId": "list_templates",
         "parameters": [
           {
-            "description": "Keep templates whose name contains this text, ignoring case (ASCII letters). `%` and `_` are taken literally. Omit it to keep every template.",
+            "description": "Keep templates whose name contains this text, ignoring case. `%` and `_` are taken literally. Omit it to keep every template.",
             "in": "query",
             "name": "search",
             "required": false,
@@ -1361,7 +1361,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Keep templates whose name contains this text, ignoring case (ASCII letters). `%` and `_` are taken literally. Omit it to keep every template.",
+              "description": "Keep templates whose name contains this text, ignoring case. `%` and `_` are taken literally. Omit it to keep every template.",
               "examples": [
                 "inv"
               ],

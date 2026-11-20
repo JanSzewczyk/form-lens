@@ -12,7 +12,7 @@
  */
 
 export type ListTemplatesParams = {
-  /** Keep templates whose name contains this text, ignoring case (ASCII letters). `%` and `_` are taken literally. Omit it to keep every template. */
+  /** Keep templates whose name contains this text, ignoring case. `%` and `_` are taken literally. Omit it to keep every template. */
   search?: string | null;
   /** Items per page, 1 to 100. Defaults to the configured page size (20 unless DEFAULT_PAGE_SIZE is set). */
   limit?: number | null;

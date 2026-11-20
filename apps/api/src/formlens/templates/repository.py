@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlalchemy import CursorResult, delete, func, or_, select, update
 
-from formlens.database import Database
+from formlens.database import CASEFOLD_FUNCTION, Database
 from formlens.templates.models import FieldType, Template, TemplateDraft, TemplateField
 from formlens.templates.tables import TemplateRow
 
@@ -125,13 +125,14 @@ class SqliteTemplateRepository:
     def page(self, *, search: str | None = None, limit: int, offset: int) -> tuple[list[Template], int]:
         """Read a page in creation order; the id breaks a tie between two templates made at the same time.
 
-        The search is `lower(name) LIKE lower(:pattern)` with a backslash as the escape character (SQLite lowers
-        ASCII letters only), and the total counts the same rows.
+        The search is `casefold(name) LIKE casefold(:pattern)` with a backslash as the escape character, where
+        `casefold` is the Unicode case folding registered on every connection, so letters outside ASCII match in
+        any case. The total counts the same rows. An empty search keeps every template; a search of spaces is not
+        trimmed.
         """
+        casefold = getattr(func, CASEFOLD_FUNCTION)
         match = (
-            func.lower(TemplateRow.name).like(func.lower(_contains_pattern(search)), escape=LIKE_ESCAPE)
-            if search
-            else None
+            casefold(TemplateRow.name).like(casefold(_contains_pattern(search)), escape=LIKE_ESCAPE) if search else None
         )
         rows_query = select(TemplateRow)
         count_query = select(func.count()).select_from(TemplateRow)

@@ -131,6 +131,36 @@ def test_submitting_logs_the_ids_and_the_size_but_not_the_document() -> None:
     assert "SECRET-MARKER" not in str(logs)
 
 
+def test_a_failing_mark_used_still_returns_the_stored_extraction_and_logs_it_once() -> None:
+    harness = Harness()
+    harness.catalog.mark_error = RuntimeError("database is locked")
+
+    with capture_logs() as logs:
+        extraction = harness.service.submit(PDF, TEMPLATE_ID)
+
+    assert harness.stored(extraction) == extraction
+    assert harness.repository.count_pending() == 1
+    [failure] = [entry for entry in logs if entry["log_level"] == "error"]
+    assert failure["event"] == "template_mark_used_failed"
+    assert (failure["extraction_id"], failure["template_id"]) == (str(extraction.id), str(TEMPLATE_ID))
+    assert failure["exc_info"] is True
+    [enqueued] = [entry for entry in logs if entry["event"] == "extraction_enqueued"]
+    assert enqueued["extraction_id"] == str(extraction.id)
+
+
+def test_an_interrupt_in_mark_used_is_not_swallowed() -> None:
+    class Interrupted(BaseException):  # stands for KeyboardInterrupt or SystemExit
+        pass
+
+    harness = Harness()
+    harness.catalog.mark_error = Interrupted()
+
+    with pytest.raises(Interrupted):
+        harness.service.submit(PDF, TEMPLATE_ID)
+
+    assert harness.repository.count_pending() == 1
+
+
 def test_a_stored_extraction_is_read_back() -> None:
     harness = Harness()
     extraction = harness.submit()

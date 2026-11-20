@@ -107,9 +107,11 @@ export function ApiStatusLive({ initial, intervalMs = DEFAULT_INTERVAL_MS }: Api
     <div className="flex min-w-0 flex-col gap-2" role="status">
       <Status variant={isConnected ? "success" : "error"}>
         <StatusIndicator />
-        <StatusLabel>{isConnected ? "API connected" : "API unavailable"}</StatusLabel>
+        <StatusLabel className="group-data-[collapsible=icon]:sr-only">
+          {isConnected ? "API connected" : "API unavailable"}
+        </StatusLabel>
       </Status>
-      <p className="font-code text-small truncate" title={health.host}>
+      <p className="font-code text-small truncate group-data-[collapsible=icon]:hidden" title={health.host}>
         {health.host}
       </p>
     </div>

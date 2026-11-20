@@ -27,6 +27,7 @@ export function SidebarNav() {
                 asChild
                 className="h-11 gap-3 px-3 data-[active=true]:font-semibold"
                 isActive={isCurrent}
+                tooltip={item.label}
               >
                 <Link
                   aria-current={isCurrent ? "page" : undefined}

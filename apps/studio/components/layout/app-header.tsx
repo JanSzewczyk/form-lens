@@ -1,15 +1,14 @@
-import { Header, Separator } from "@szum-tech/design-system";
+import { Header, Separator, SidebarTrigger } from "@szum-tech/design-system";
 
 import { ThemeToggle } from "~/components/ui/theme-toggle";
 
 import { AppBreadcrumbs } from "./app-breadcrumbs";
-import { SidebarToggle } from "./sidebar-toggle";
 
 export function AppHeader() {
   return (
     <Header variant="full">
       <div className="flex w-full min-w-0 items-center gap-3">
-        <SidebarToggle />
+        <SidebarTrigger />
         <Separator
           className="data-[orientation=vertical]:h-auto data-[orientation=vertical]:self-stretch"
           orientation="vertical"

@@ -66,20 +66,18 @@ FormsSection.test("Shows the API status box in the footer", async ({ canvas }) =
 });
 
 FormsSection.test(
-  "The toggle reports expanded, collapses the sidebar and expands it again",
+  "The toggle collapses the sidebar to an icon rail and expands it again",
   async ({ canvas, canvasElement, userEvent }) => {
     const toggle = canvas.getByRole("button", { name: /toggle sidebar/i });
     const sidebar = canvasElement.querySelector('[data-slot="sidebar"]');
 
-    await expect(toggle).toHaveAttribute("aria-expanded", "true");
     await expect(sidebar).toHaveAttribute("data-state", "expanded");
 
     await userEvent.click(toggle);
-    await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+    await expect(sidebar).toHaveAttribute("data-collapsible", "icon");
 
     await userEvent.click(toggle);
-    await expect(toggle).toHaveAttribute("aria-expanded", "true");
     await expect(sidebar).toHaveAttribute("data-state", "expanded");
   }
 );
@@ -143,14 +141,12 @@ PhoneWidth.test("Hides the navigation until the toggle opens it as a sheet", asy
   const toggle = await canvas.findByRole("button", { name: /toggle sidebar/i });
 
   await expect(canvas.queryByRole("link", { name: "Jobs" })).not.toBeInTheDocument();
-  await expect(toggle).toHaveAttribute("aria-expanded", "false");
 
   await userEvent.click(toggle);
 
   const dialog = await screen.findByRole("dialog");
   await expect(dialog).toBeInTheDocument();
   await expect(screen.getByRole("link", { name: "Forms" })).toHaveAttribute("aria-current", "page");
-  await expect(toggle).toHaveAttribute("aria-expanded", "true");
 });
 
 PhoneWidth.test("Closes the sheet when a link is chosen", async ({ canvas, userEvent }) => {
@@ -171,17 +167,21 @@ FormsSection.test("Shows the Form Lens logo as a link to Forms", async ({ canvas
 });
 
 FormsSection.test(
-  "Hides the navigation off screen when collapsed and brings it back",
-  async ({ canvas, userEvent }) => {
+  "Keeps an icon-only rail when collapsed, with the links still reachable, and widens again",
+  async ({ canvas, canvasElement, userEvent }) => {
     const toggle = canvas.getByRole("button", { name: /toggle sidebar/i });
     const nav = canvas.getByRole("navigation", { name: /main navigation/i });
+    const forms = mainNavLink(canvasElement, "Forms");
+    const expandedWidth = nav.getBoundingClientRect().width;
 
     await userEvent.click(toggle);
-    await waitFor(() => expect(nav.getBoundingClientRect().right).toBeLessThanOrEqual(0));
-
-    await userEvent.click(toggle);
-    await waitFor(() => expect(nav.getBoundingClientRect().left).toBeGreaterThanOrEqual(0));
+    await waitFor(() => expect(nav.getBoundingClientRect().width).toBeLessThan(expandedWidth / 2));
     await expect(nav).toBeVisible();
+    await expect(forms).toHaveAttribute("href", "/forms");
+    await expect(forms).toBeVisible();
+
+    await userEvent.click(toggle);
+    await waitFor(() => expect(nav.getBoundingClientRect().width).toBeGreaterThanOrEqual(expandedWidth - 1));
   }
 );
 
@@ -211,7 +211,7 @@ FormsSection.test(
   async ({ canvasElement }) => {
     const header = canvasElement.querySelector("header");
     const separator = header?.querySelector<HTMLElement>('[data-orientation="vertical"]');
-    const toggle = header?.querySelector<HTMLElement>("button[aria-expanded]");
+    const toggle = header?.querySelector<HTMLElement>("button");
     if (!(header && separator && toggle && separator.parentElement)) {
       throw new Error("The header has no separator or no sidebar toggle");
     }

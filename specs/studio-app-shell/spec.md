@@ -35,7 +35,7 @@ Studio users get the application foundation from the FormLens design (the naviga
 <!-- Concrete, measurable. Each AC maps to one test. Ids are stable: never renumber or reuse one. -->
 
 - [x] AC1: given any Studio page → the side navigation shows Forms, New document and Jobs, and the item of the current section is marked as current.
-- [x] AC2: given the navigation is open → clicking the toggle hides it and the toggle reports it collapsed; clicking again shows it.
+- [x] AC2: given the navigation is open → clicking the toggle collapses it to a narrow rail with only the icons (labels in tooltips); clicking again expands it. The design system's trigger does not report its state (`aria-expanded`); accepted, see `design-system-report.md`.
 - [x] AC3: given the API answers its health check → the status box shows "API connected" and the API address; given it does not → it shows the API as unavailable.
 - [x] AC4: given the user clicks New document or Jobs → a placeholder page in the shell says the section is coming.
 - [x] AC5: given the user switches the theme → every page renders in dark (or light) colors and the choice survives a reload.

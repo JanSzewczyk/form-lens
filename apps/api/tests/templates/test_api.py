@@ -368,9 +368,9 @@ def test_an_empty_search_keeps_every_template(client: TestClient) -> None:
     create(client, name="Invoice")
     create(client, name="Lease")
 
-    page = client.get(URL, params={"search": ""}).json()
+    page = client.get(f"{URL}?search=").json()
 
-    assert (len(page["items"]), page["total"]) == (2, 2)
+    assert (names_of(page), page["total"]) == (["Invoice", "Lease"], 2)
 
 
 def test_a_search_of_a_hundred_characters_is_accepted_and_a_longer_one_is_a_422(client: TestClient) -> None:
@@ -389,6 +389,16 @@ def test_a_search_made_of_a_space_is_not_trimmed_and_matches_names_with_a_space(
     page = client.get(URL, params={"search": " "}).json()
 
     assert (names_of(page), page["total"]) == (["VAT invoice"], 1)
+
+
+def test_a_search_of_several_spaces_matches_only_names_with_that_many_spaces_in_a_row(client: TestClient) -> None:
+    for name in ("Invoice", "VAT invoice", "VAT  invoice"):
+        create(client, name=name)
+
+    page = client.get(URL, params={"search": "   "}).json()
+
+    assert (page["items"], page["total"]) == ([], 0)
+    assert names_of(client.get(URL, params={"search": "  "}).json()) == ["VAT  invoice"]
 
 
 @pytest.mark.parametrize(
@@ -426,18 +436,47 @@ def test_a_search_of_a_hundred_multibyte_characters_is_accepted(client: TestClie
     assert (names_of(page), page["total"]) == ([name], 1)
 
 
-def test_a_search_folds_the_case_of_ascii_letters_only(client: TestClient) -> None:
-    """The documented limit: SQLite `lower()` folds A-Z, so a letter such as Z with a dot must match in its own case."""
-    name = "Faktura \u017b\u00d3\u0141W"
+@pytest.mark.parametrize(
+    ("name", "search"),
+    [
+        ("\u0141\u00f3d\u017a Faktura", "\u0142\u00f3d\u017a"),
+        ("\u0141\u00f3d\u017a Faktura", "\u0141\u00d3D\u0179"),
+        ("\u0142\u00f3d\u017a faktura", "\u0141\u00d3D\u0179"),
+        ("Faktura \u0105\u0119", "\u0104\u0118"),
+        ("Faktura \u0104\u0118", "\u0105\u0119"),
+        ("Faktura \u017b\u00d3\u0141W", "\u017c\u00f3\u0142w"),
+        ("Faktura \u017c\u00f3\u0142w", "\u017b\u00d3\u0141W"),
+        ("\u0421\u0447\u0451\u0442", "\u0441\u0427\u0401"),
+    ],
+    ids=[
+        "lower-search",
+        "upper-search",
+        "lower-name",
+        "upper-search-pl",
+        "lower-search-pl",
+        "lower-search-zolw",
+        "upper-search-zolw",
+        "cyrillic",
+    ],
+)
+def test_a_search_ignores_the_case_of_letters_outside_ascii(client: TestClient, name: str, search: str) -> None:
     create(client, name=name)
+    create(client, name="Lease agreement")
 
-    ascii_other_case = client.get(URL, params={"search": "FAKTURA"}).json()
-    same_case = client.get(URL, params={"search": "\u017b\u00d3\u0141W"}).json()
-    other_case = client.get(URL, params={"search": "\u017c\u00f3\u0142w"}).json()
+    page = client.get(URL, params={"search": search}).json()
 
-    assert names_of(ascii_other_case) == [name]
-    assert names_of(same_case) == [name]
-    assert (other_case["items"], other_case["total"]) == ([], 0)
+    assert (names_of(page), page["total"]) == ([name], 1)
+
+
+def test_a_search_with_non_ascii_letters_still_takes_the_wildcards_literally(client: TestClient) -> None:
+    for name in ("\u0141\u00f3d\u017a_1", "\u0141\u00f3d\u017a 1", "100% \u0141\u00f3d\u017a"):
+        create(client, name=name)
+
+    underscore = client.get(URL, params={"search": "\u0142\u00f3d\u017a_"}).json()
+    percent = client.get(URL, params={"search": "0% \u0142"}).json()
+
+    assert names_of(underscore) == ["\u0141\u00f3d\u017a_1"]
+    assert names_of(percent) == ["100% \u0141\u00f3d\u017a"]
 
 
 def test_a_new_template_has_no_last_used_date(client: TestClient) -> None:

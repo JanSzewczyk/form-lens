@@ -77,7 +77,7 @@ def list_templates(
         str | None,
         Query(
             max_length=MAX_TEMPLATE_NAME_LENGTH,
-            description="Keep templates whose name contains this text, ignoring case (ASCII letters). `%` and `_` "
+            description="Keep templates whose name contains this text, ignoring case. `%` and `_` "
             "are taken literally. Omit it to keep every template.",
             examples=["inv"],
         ),

@@ -168,3 +168,64 @@ def test_the_total_of_a_search_counts_the_matches_beyond_the_page(repository: Sq
     found, total = repository.page(search="invoice", limit=1, offset=1)
 
     assert ([item.name for item in found], total) == (["Invoice 2"], 3)
+
+
+@pytest.mark.parametrize(
+    ("search", "expected"),
+    [
+        ("\u0142\u00f3d\u017a", ["\u0141\u00f3d\u017a Faktura"]),
+        ("\u0141\u00d3D\u0179", ["\u0141\u00f3d\u017a Faktura"]),
+        ("\u0105\u0119", ["Zam\u00f3wienie \u0104\u0118"]),
+        ("\u0104\u0118", ["Zam\u00f3wienie \u0104\u0118"]),
+        ("faktura", ["\u0141\u00f3d\u017a Faktura"]),
+        ("\u00df", ["Stra\u00dfe"]),
+        ("strasse", ["Stra\u00dfe"]),
+    ],
+    ids=[
+        "lower-search",
+        "upper-search",
+        "lower-search-pl",
+        "upper-search-pl",
+        "ascii-search",
+        "sharp-s",
+        "folded-sharp-s",
+    ],
+)
+def test_a_search_ignores_the_case_of_letters_outside_ascii(
+    repository: SqliteTemplateRepository, search: str, expected: list[str]
+) -> None:
+    add_named(repository, "\u0141\u00f3d\u017a Faktura", "Zam\u00f3wienie \u0104\u0118", "Stra\u00dfe", "Lease")
+
+    found, total = repository.page(search=search, limit=10, offset=0)
+
+    assert ([item.name for item in found], total) == (expected, len(expected))
+
+
+def test_a_search_with_non_ascii_letters_takes_the_escape_character_literally(
+    repository: SqliteTemplateRepository,
+) -> None:
+    add_named(repository, "\u0141\\\u00f3d\u017a", "\u0141\u00f3d\u017a", "\u0141%\u00f3d\u017a")
+
+    backslash, backslash_total = repository.page(search="\u0142\\\u00d3", limit=10, offset=0)
+    percent, percent_total = repository.page(search="\u0142%\u00d3", limit=10, offset=0)
+
+    assert ([item.name for item in backslash], backslash_total) == (["\u0141\\\u00f3d\u017a"], 1)
+    assert ([item.name for item in percent], percent_total) == (["\u0141%\u00f3d\u017a"], 1)
+
+
+def test_an_empty_search_keeps_every_template_and_counts_them_all(repository: SqliteTemplateRepository) -> None:
+    add_named(repository, "Invoice", "Lease", "\u0141\u00f3d\u017a")
+
+    found, total = repository.page(search="", limit=2, offset=0)
+
+    assert ([item.name for item in found], total) == (["Invoice", "Lease"], 3)
+
+
+def test_a_search_of_spaces_is_not_trimmed(repository: SqliteTemplateRepository) -> None:
+    add_named(repository, "Invoice", "VAT invoice", "VAT  invoice")
+
+    one, one_total = repository.page(search=" ", limit=10, offset=0)
+    two, two_total = repository.page(search="  ", limit=10, offset=0)
+
+    assert ([item.name for item in one], one_total) == (["VAT invoice", "VAT  invoice"], 2)
+    assert ([item.name for item in two], two_total) == (["VAT  invoice"], 1)

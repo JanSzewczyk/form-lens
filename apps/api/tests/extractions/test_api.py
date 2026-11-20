@@ -11,6 +11,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
+from structlog.testing import capture_logs
 
 from formlens.config import Settings
 from formlens.extractions.domain.exceptions import InvalidOutput, LlmUnavailable
@@ -139,6 +140,26 @@ def test_a_refused_submission_leaves_the_templates_last_used_date_empty(client: 
 
     assert submit(client, template["id"], b"").status_code == 400
 
+    assert client.get(f"/v1/templates/{template['id']}").json()["last_used_at"] is None
+
+
+def test_a_submission_is_accepted_when_the_last_used_date_cannot_be_written(
+    app: FastAPI, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template = make_template(client)
+
+    def fail(*_: object) -> None:
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(app.state.template_repository, "mark_used", fail)
+
+    with capture_logs() as logs:
+        response = submit(client, template["id"])
+
+    body = response.json()
+    assert response.status_code == 202
+    assert client.get(response.headers["Location"]).json() == body
+    assert [entry["event"] for entry in logs if entry["log_level"] == "error"] == ["template_mark_used_failed"]
     assert client.get(f"/v1/templates/{template['id']}").json()["last_used_at"] is None
 
 

@@ -206,8 +206,9 @@ class FakeExtractor:
 class FakeTemplateCatalog:
     """Holds snapshots by id."""
 
-    def __init__(self, *snapshots: TemplateSnapshot) -> None:
+    def __init__(self, *snapshots: TemplateSnapshot, mark_error: Exception | None = None) -> None:
         self.snapshots = {snapshot.template_id: snapshot for snapshot in snapshots}
+        self.mark_error = mark_error  # raised by `mark_used`, after the call is recorded
         self.marked: list[tuple[UUID, datetime]] = []  # every `mark_used` call, in order
 
     def snapshot(self, template_id: UUID) -> TemplateSnapshot:
@@ -218,3 +219,5 @@ class FakeTemplateCatalog:
 
     def mark_used(self, template_id: UUID, at: datetime) -> None:
         self.marked.append((template_id, at))
+        if self.mark_error is not None:
+            raise self.mark_error

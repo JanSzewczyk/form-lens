@@ -229,3 +229,144 @@ def test_a_search_of_spaces_is_not_trimmed(repository: SqliteTemplateRepository)
 
     assert ([item.name for item in one], one_total) == (["VAT invoice", "VAT  invoice"], 2)
     assert ([item.name for item in two], two_total) == (["VAT  invoice"], 1)
+
+
+@pytest.fixture
+def second_database(db_url: str) -> Iterator[Database]:
+    """Another engine, and so another pool, on the same file as `repository`."""
+    database = Database(db_url)
+    yield database
+    database.dispose()
+
+
+def test_a_search_finds_a_template_stored_through_another_engine_of_the_same_file(
+    repository: SqliteTemplateRepository, second_database: Database
+) -> None:
+    add_named(repository, "Łódź Faktura", "Lease")
+
+    found, total = SqliteTemplateRepository(second_database).page(search="ŁÓDŹ", limit=10, offset=0)
+
+    assert ([item.name for item in found], total) == (["Łódź Faktura"], 1)
+
+
+def test_the_folding_function_exists_on_every_connection_the_pool_opens(second_database: Database) -> None:
+    repository = SqliteTemplateRepository(second_database)
+    add_named(repository, "Łódź Faktura", "Lease")
+
+    with second_database.engine.connect() as first, second_database.engine.connect() as second:
+        # Both are checked out now, so the search below runs on a third physical connection.
+        assert first.connection.dbapi_connection is not second.connection.dbapi_connection
+        folded = [
+            connection.exec_driver_sql("SELECT formlens_casefold(?)", ("ŁÓDŹ",)).scalar_one()
+            for connection in (first, second)
+        ]
+        found, total = repository.page(search="łÓdŹ", limit=10, offset=0)
+
+    assert folded == ["łódź", "łódź"]
+    assert ([item.name for item in found], total) == (["Łódź Faktura"], 1)
+
+
+def test_the_folding_function_passes_null_through(second_database: Database) -> None:
+    with second_database.engine.connect() as connection:
+        folded = connection.exec_driver_sql("SELECT formlens_casefold(NULL)").scalar_one()
+
+    assert folded is None
+
+
+@pytest.mark.parametrize(
+    ("name", "search"),
+    [
+        ("ΚΟΣΜΟΣ", "κοσμος"),  # final sigma in the search
+        ("κοσμος", "ΚΟΣΜΟΣ"),  # final sigma in the name
+        ("ΚΟΣΜΟΣ", "σ"),  # noqa: RUF001  # the letter itself
+        ("FILE", "ﬁle"),  # the ligature in the search
+        ("ﬁle", "FILE"),  # the ligature in the name
+        ("STRASSE", "ß"),
+        ("Straße", "STRASSE"),
+        ("Straße", "ẞ"),  # capital sharp s
+        ("İstanbul", "İSTANBUL"),  # dotted capital I against itself in another case
+        ("Café Rouge", "CAFÉ"),  # a combining accent, the same form on both sides
+        ("Café Rouge", "cafe"),
+        ("\U00010400bc", "\U00010428"),  # outside the basic plane
+    ],
+    ids=[
+        "final-sigma-search",
+        "final-sigma-name",
+        "sigma-letter",
+        "ligature-search",
+        "ligature-name",
+        "sharp-s-name-upper",
+        "strasse-search",
+        "capital-sharp-s",
+        "dotted-capital-i",
+        "combining-accent",
+        "combining-accent-prefix",
+        "astral",
+    ],
+)
+def test_a_search_follows_unicode_case_folding(repository: SqliteTemplateRepository, name: str, search: str) -> None:
+    add_named(repository, "Lease", name)
+
+    found, total = repository.page(search=search, limit=10, offset=0)
+
+    assert ([item.name for item in found], total) == ([name], 1)
+
+
+def test_a_search_with_a_non_ascii_text_pages_and_counts_the_matches_only(
+    repository: SqliteTemplateRepository,
+) -> None:
+    add_named(repository, "Lease", "Łódź 1", "ŁÓDŹ 2", "x", "łódź 3")
+
+    second, total = repository.page(search="ŁóDź", limit=1, offset=1)
+    past_the_end, total_past = repository.page(search="ŁóDź", limit=1, offset=3)
+
+    assert ([item.name for item in second], total) == (["ŁÓDŹ 2"], 3)
+    assert (past_the_end, total_past) == ([], 3)
+
+
+# The search is "contains the text, ignoring case", implemented as Unicode `str.casefold()` on both sides. The three
+# tests below pin what that means where it differs from what a reader might expect: a documented limit, not a defect.
+# Accent normalization and locale rules (Turkish i) are not case folding, and full case folding maps the capital
+# dotted I to "i" plus a combining dot and the sharp s to "ss".
+
+
+def test_a_search_in_ascii_does_not_find_a_name_with_a_dotted_capital_i_but_its_own_folded_form_does(
+    repository: SqliteTemplateRepository,
+) -> None:
+    """Full case folding turns the capital dotted I into "i" and a combining dot, so a plain "i" is not equal to it."""
+    add_named(repository, "Lease", "\u0130stanbul")
+
+    ascii_search, ascii_total = repository.page(search="istanbul", limit=10, offset=0)
+    same_letter, same_total = repository.page(search="\u0130stanbul", limit=10, offset=0)
+    folded, folded_total = repository.page(search="i\u0307stanbul", limit=10, offset=0)
+
+    assert (ascii_search, ascii_total) == ([], 0)
+    assert ([item.name for item in same_letter], same_total) == (["\u0130stanbul"], 1)
+    assert ([item.name for item in folded], folded_total) == (["\u0130stanbul"], 1)
+
+
+def test_a_search_for_a_sharp_s_matches_names_with_a_double_s(
+    repository: SqliteTemplateRepository,
+) -> None:
+    """Full case folding maps the sharp s to "ss", so a search for it finds "ss" wherever it stands in a name."""
+    add_named(repository, "Class", "Assets", "Stra\u00dfe", "Lease")
+
+    found, total = repository.page(search="\u00df", limit=10, offset=0)
+
+    assert ([item.name for item in found], total) == (["Class", "Assets", "Stra\u00dfe"], 3)
+
+
+@pytest.mark.parametrize(
+    ("name", "search"),
+    [("Caf\u00e9", "Cafe\u0301"), ("Cafe\u0301", "Caf\u00e9")],
+    ids=["composed-name-decomposed-search", "decomposed-name-composed-search"],
+)
+def test_a_search_does_not_equate_a_composed_accent_with_a_combining_mark(
+    repository: SqliteTemplateRepository, name: str, search: str
+) -> None:
+    """Case folding does not normalize: the two spellings of the same accent are different text to the search."""
+    add_named(repository, "Lease", name)
+
+    found, total = repository.page(search=search, limit=10, offset=0)
+
+    assert (found, total) == ([], 0)

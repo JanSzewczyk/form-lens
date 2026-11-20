@@ -479,6 +479,15 @@ def test_a_search_with_non_ascii_letters_still_takes_the_wildcards_literally(cli
     assert names_of(percent) == ["100% \u0141\u00f3d\u017a"]
 
 
+def test_a_non_ascii_search_pages_through_the_matches_and_counts_only_them(client: TestClient) -> None:
+    for name in ("\u0141\u00f3d\u017a 1", "\u0141\u00d3D\u0179 2", "\u0142\u00f3d\u017a 3", "Lease"):
+        create(client, name=name)
+
+    page = client.get(URL, params={"search": "\u0141\u00f3D\u017a", "limit": 1, "offset": 1}).json()
+
+    assert (names_of(page), page["total"]) == (["\u0141\u00d3D\u0179 2"], 3)
+
+
 def test_a_new_template_has_no_last_used_date(client: TestClient) -> None:
     created = create(client)
 

@@ -148,6 +148,19 @@ def test_a_failing_mark_used_still_returns_the_stored_extraction_and_logs_it_onc
     assert enqueued["extraction_id"] == str(extraction.id)
 
 
+def test_an_interrupt_in_mark_used_is_not_swallowed() -> None:
+    class Interrupted(BaseException):  # stands for KeyboardInterrupt or SystemExit
+        pass
+
+    harness = Harness()
+    harness.catalog.mark_error = Interrupted()
+
+    with pytest.raises(Interrupted):
+        harness.service.submit(PDF, TEMPLATE_ID)
+
+    assert harness.repository.count_pending() == 1
+
+
 def test_a_stored_extraction_is_read_back() -> None:
     harness = Harness()
     extraction = harness.submit()

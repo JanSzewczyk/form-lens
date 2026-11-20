@@ -57,9 +57,15 @@ function ignoreReorder() {
   // The order changes in `onMove`, through the field array; the sortable's own copy of the list is not used.
 }
 
-function readFieldId(field: { id: string }): string {
-  return field.id;
+function readRowId(rowId: string): string {
+  return rowId;
 }
+
+/**
+ * The ids of the field rows, in the order of the rows, and the number the next new row gets. They are kept apart from
+ * the ids of react-hook-form, which are random and so differ between the server and the browser render.
+ */
+type Rows = { ids: Array<string>; next: number };
 
 /**
  * Client Component: it owns the form state (react-hook-form), the add/remove/reorder of the field rows and the
@@ -72,6 +78,11 @@ export function TemplateEditor(props: TemplateEditorProps) {
     resolver: zodResolver(templateFormSchema)
   });
   const { append, fields, move, remove } = useFieldArray({ control: form.control, name: "fields" });
+  const rowIdPrefix = React.useId();
+  const [rows, setRows] = React.useState<Rows>(() => ({
+    ids: initialValues.fields.map((_, index) => `${rowIdPrefix}-${index}`),
+    next: initialValues.fields.length
+  }));
   const watchedFields = useWatch({ control: form.control, name: "fields" });
   const [failure, setFailure] = React.useState<TemplateActionFailure | null>(null);
   const [isPending, startTransition] = React.useTransition();
@@ -87,12 +98,39 @@ export function TemplateEditor(props: TemplateEditorProps) {
     }
   }
 
-  const submit = form.handleSubmit((values) => {
-    setFailure(null);
+  function addField() {
+    append(emptyFieldValues(), { shouldFocus: true });
+    setRows(({ ids, next }) => ({ ids: [...ids, `${rowIdPrefix}-${next}`], next: next + 1 }));
+  }
+
+  function removeField(index: number) {
+    remove(index);
+    setRows(({ ids, next }) => ({ ids: ids.filter((_, position) => position !== index), next }));
+  }
+
+  function moveField(from: number, to: number) {
+    move(from, to);
+    setRows(({ ids, next }) => {
+      const moved = [...ids];
+      const [row] = moved.splice(from, 1);
+      if (row !== undefined) {
+        moved.splice(to, 0, row);
+      }
+      return { ids: moved, next };
+    });
+  }
+
+  const validateAndSubmit = form.handleSubmit((values) => {
     startTransition(async () => {
       showFailure(await onSubmitAction(values));
     });
   });
+
+  /** Every submit starts clean: a banner of an earlier answer of the API must not outlive a refusal made here. */
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    setFailure(null);
+    return validateAndSubmit(event);
+  }
 
   function confirmDelete() {
     if (props.mode !== "edit") {
@@ -157,7 +195,7 @@ export function TemplateEditor(props: TemplateEditorProps) {
                 {fields.length > 0 ? (
                   <Button
                     disabled={fields.length >= FIELDS_MAX}
-                    onClick={() => append(emptyFieldValues(), { shouldFocus: true })}
+                    onClick={addField}
                     size="sm"
                     startIcon={<PlusIcon aria-hidden="true" />}
                     type="button"
@@ -177,11 +215,7 @@ export function TemplateEditor(props: TemplateEditorProps) {
                       </EmptyDescription>
                     </EmptyHeader>
                     <EmptyContent>
-                      <Button
-                        onClick={() => append(emptyFieldValues(), { shouldFocus: true })}
-                        type="button"
-                        variant="outline"
-                      >
+                      <Button onClick={addField} type="button" variant="outline">
                         Add first field
                       </Button>
                     </EmptyContent>
@@ -189,21 +223,21 @@ export function TemplateEditor(props: TemplateEditorProps) {
                 ) : (
                   <Sortable
                     className="flex flex-col gap-3"
-                    getItemValue={readFieldId}
-                    onMove={({ activeIndex, overIndex }) => move(activeIndex, overIndex)}
+                    getItemValue={readRowId}
+                    onMove={({ activeIndex, overIndex }) => moveField(activeIndex, overIndex)}
                     onValueChange={ignoreReorder}
-                    value={fields}
+                    value={rows.ids}
                   >
-                    {fields.map((field, index) => (
+                    {rows.ids.map((rowId, index) => (
                       <FieldRow
-                        fieldId={field.id}
+                        fieldId={rowId}
                         index={index}
                         isFirst={index === 0}
-                        isLast={index === fields.length - 1}
-                        key={field.id}
-                        onMoveDown={() => move(index, index + 1)}
-                        onMoveUp={() => move(index, index - 1)}
-                        onRemove={() => remove(index)}
+                        isLast={index === rows.ids.length - 1}
+                        key={rowId}
+                        onMoveDown={() => moveField(index, index + 1)}
+                        onMoveUp={() => moveField(index, index - 1)}
+                        onRemove={() => removeField(index)}
                       />
                     ))}
                   </Sortable>

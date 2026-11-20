@@ -1,71 +1,65 @@
-import { afterEach, beforeEach, describe, expect, test as it, vi } from "vitest";
+import { beforeEach, describe, expect, test as it, vi } from "vitest";
 
-const getReadiness = vi.hoisted(() => vi.fn());
-const warn = vi.hoisted(() => vi.fn());
+import { ApiHealthStatus } from "~/lib/api-health-types";
+import { log, resetLog } from "~/tests/unit/mock-logger";
+import { apiUrl, HttpResponse, http, problem, server } from "~/tests/unit/msw/server";
 
-vi.mock("server-only", () => ({}));
-vi.mock("~/data/env/server", () => ({ env: { FORMLENS_API_URL: "http://api.internal:8000/base" } }));
-vi.mock("~/lib/formlens-api", () => ({ getReadiness }));
-vi.mock("~/lib/logger", () => {
-  const logger = { warn, withError: vi.fn(), withMetadata: vi.fn() };
-  logger.withError.mockReturnValue(logger);
-  logger.withMetadata.mockReturnValue(logger);
-  return { default: logger };
-});
+vi.mock("~/lib/logger", async () => (await import("~/tests/unit/mock-logger")).loggerModule);
 
 import { checkApiHealth } from "./api-health";
 
+const READY = "/health/ready";
+
 describe("checkApiHealth", () => {
   beforeEach(() => {
-    getReadiness.mockReset();
-    warn.mockReset();
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
+    resetLog();
   });
 
   it("is connected when the readiness probe answers 200, with the API host", async () => {
-    getReadiness.mockResolvedValue({ data: { status: "ready" }, status: 200 });
+    server.use(http.get(apiUrl(READY), () => HttpResponse.json({ status: "ready" })));
 
-    await expect(checkApiHealth()).resolves.toEqual({ host: "api.internal:8000", status: "connected" });
-    expect(warn).not.toHaveBeenCalled();
+    await expect(checkApiHealth()).resolves.toEqual({ host: "api.internal:8000", status: ApiHealthStatus.connected });
+    expect(log.warn).not.toHaveBeenCalled();
   });
 
-  it("asks without caching and with a timeout signal", async () => {
-    getReadiness.mockResolvedValue({ data: { status: "ready" }, status: 200 });
+  it("asks without caching, so a poll never gets a stale answer", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    server.use(http.get(apiUrl(READY), () => HttpResponse.json({ status: "ready" })));
 
     await checkApiHealth();
 
-    expect(getReadiness).toHaveBeenCalledWith(
+    expect(fetchSpy).toHaveBeenCalledWith(
+      apiUrl(READY),
       expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) })
     );
   });
 
-  it("is unavailable when the probe answers 503", async () => {
-    getReadiness.mockResolvedValue({ data: { title: "Not ready" }, status: 503 });
+  it("is unavailable when the probe answers 503, and logs the status code", async () => {
+    server.use(http.get(apiUrl(READY), () => problem(503, { title: "Not ready" })));
 
-    await expect(checkApiHealth()).resolves.toEqual({ host: "api.internal:8000", status: "unavailable" });
-    expect(warn).toHaveBeenCalledWith("api_health_not_ready");
+    await expect(checkApiHealth()).resolves.toEqual({ host: "api.internal:8000", status: ApiHealthStatus.unavailable });
+    expect(log.withMetadata).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 503 }));
+    expect(log.warn).toHaveBeenCalledOnce();
   });
 
-  it("is unavailable, without throwing, when the network fails", async () => {
-    getReadiness.mockRejectedValue(new TypeError("fetch failed"));
+  it("is unavailable, without throwing, when the network fails, and logs the error", async () => {
+    server.use(http.get(apiUrl(READY), () => HttpResponse.error()));
 
-    await expect(checkApiHealth()).resolves.toEqual({ host: "api.internal:8000", status: "unavailable" });
-    expect(warn).toHaveBeenCalledWith("api_health_check_failed");
+    await expect(checkApiHealth()).resolves.toEqual({ host: "api.internal:8000", status: ApiHealthStatus.unavailable });
+    expect(log.withError).toHaveBeenCalledWith(expect.any(TypeError));
   });
 
   it("is unavailable, without throwing, when the request times out", async () => {
-    getReadiness.mockRejectedValue(new DOMException("The operation timed out.", "TimeoutError"));
+    vi.spyOn(AbortSignal, "timeout").mockReturnValue(AbortSignal.abort(new DOMException("timed out", "TimeoutError")));
+    server.use(http.get(apiUrl(READY), () => HttpResponse.json({ status: "ready" })));
 
-    await expect(checkApiHealth()).resolves.toEqual({ host: "api.internal:8000", status: "unavailable" });
-    expect(warn).toHaveBeenCalledWith("api_health_check_failed");
+    await expect(checkApiHealth()).resolves.toEqual({ host: "api.internal:8000", status: ApiHealthStatus.unavailable });
+    expect(log.warn).toHaveBeenCalledOnce();
   });
 
   it("gives the request a 3 s timeout", async () => {
     const timeout = vi.spyOn(AbortSignal, "timeout");
-    getReadiness.mockResolvedValue({ data: { status: "ready" }, status: 200 });
+    server.use(http.get(apiUrl(READY), () => HttpResponse.json({ status: "ready" })));
 
     await checkApiHealth();
 

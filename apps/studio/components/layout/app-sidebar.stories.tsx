@@ -205,3 +205,21 @@ SiblingOfAnAddressedSection.test(
     await expect(canvasElement.querySelectorAll('nav[aria-label="Main navigation"] a[aria-current]')).toHaveLength(0);
   }
 );
+
+FormsSection.test(
+  "The header's vertical separator spans the height of the toggle and the breadcrumbs, not a short stub",
+  async ({ canvasElement }) => {
+    const header = canvasElement.querySelector("header");
+    const separator = header?.querySelector<HTMLElement>('[data-orientation="vertical"]');
+    const toggle = header?.querySelector<HTMLElement>("button[aria-expanded]");
+    if (!(header && separator && toggle && separator.parentElement)) {
+      throw new Error("The header has no separator or no sidebar toggle");
+    }
+
+    const separatorHeight = separator.getBoundingClientRect().height;
+    const rowHeight = separator.parentElement.getBoundingClientRect().height;
+
+    await expect(separatorHeight).toBeGreaterThanOrEqual(toggle.getBoundingClientRect().height);
+    await expect(Math.abs(separatorHeight - rowHeight)).toBeLessThanOrEqual(1);
+  }
+);

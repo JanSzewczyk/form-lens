@@ -1,27 +1,28 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, test as it, vi } from "vitest";
 
-const checkApiHealth = vi.hoisted(() => vi.fn());
+import { resetLog } from "~/tests/unit/mock-logger";
+import { apiUrl, HttpResponse, http, problem, server } from "~/tests/unit/msw/server";
+
 const connection = vi.hoisted(() => vi.fn());
 
-vi.mock("server-only", () => ({}));
-vi.mock("~/lib/api-health", () => ({ checkApiHealth }));
+// `connection()` is Next.js's request marker and throws outside a request; the API itself is faked over HTTP (MSW).
 vi.mock("next/server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("next/server")>()),
   connection
 }));
+vi.mock("~/lib/logger", async () => (await import("~/tests/unit/mock-logger")).loggerModule);
 
 import { ApiStatus, ApiStatusFallback } from "./api-status";
 
 describe("ApiStatus (server-rendered first state)", () => {
   beforeEach(() => {
-    checkApiHealth.mockReset();
-    connection.mockReset();
+    resetLog();
     connection.mockResolvedValue(undefined);
   });
 
-  it("renders API connected with the host when the health check is connected", async () => {
-    checkApiHealth.mockResolvedValue({ host: "api.internal:8000", status: "connected" });
+  it("renders API connected with the host when the API is ready (AC3)", async () => {
+    server.use(http.get(apiUrl("/health/ready"), () => HttpResponse.json({ status: "ready" })));
 
     const html = renderToStaticMarkup(await ApiStatus());
 
@@ -30,8 +31,8 @@ describe("ApiStatus (server-rendered first state)", () => {
     expect(html).not.toContain("API unavailable");
   });
 
-  it("renders API unavailable with the host when the health check is unavailable", async () => {
-    checkApiHealth.mockResolvedValue({ host: "api.internal:8000", status: "unavailable" });
+  it("renders API unavailable with the host when the API is not ready (AC3)", async () => {
+    server.use(http.get(apiUrl("/health/ready"), () => problem(503)));
 
     const html = renderToStaticMarkup(await ApiStatus());
 
@@ -41,12 +42,18 @@ describe("ApiStatus (server-rendered first state)", () => {
   });
 
   it("opts into per-request rendering before it asks the API", async () => {
-    checkApiHealth.mockResolvedValue({ host: "h:1", status: "connected" });
+    const asked: Array<number> = [];
+    server.use(
+      http.get(apiUrl("/health/ready"), () => {
+        asked.push(connection.mock.calls.length);
+        return HttpResponse.json({ status: "ready" });
+      })
+    );
 
     await ApiStatus();
 
     expect(connection).toHaveBeenCalledOnce();
-    expect(connection.mock.invocationCallOrder[0]).toBeLessThan(checkApiHealth.mock.invocationCallOrder[0] ?? 0);
+    expect(asked).toEqual([1]);
   });
 });
 

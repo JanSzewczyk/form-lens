@@ -1,9 +1,11 @@
 import "server-only";
 
 import { env } from "~/data/env/server";
-import type { ApiHealth } from "~/lib/api-health-types";
+import { type ApiHealth, ApiHealthStatus } from "~/lib/api-health-types";
 import { getReadiness } from "~/lib/formlens-api";
-import logger from "~/lib/logger";
+import { createLogger } from "~/lib/logger";
+
+const log = createLogger({ module: "api-health" });
 
 const HEALTH_TIMEOUT_MS = 3000;
 
@@ -24,11 +26,11 @@ export async function checkApiHealth(): Promise<ApiHealth> {
     const response = await getReadiness({ cache: "no-store", signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) });
 
     if (response.status === 200) {
-      return { host, status: "connected" };
+      return { host, status: ApiHealthStatus.connected };
     }
-    logger.withMetadata({ host, statusCode: response.status }).warn("api_health_not_ready");
+    log.withMetadata({ host, statusCode: response.status }).warn("API readiness probe answered not ready");
   } catch (error) {
-    logger.withError(error).withMetadata({ host }).warn("api_health_check_failed");
+    log.withError(error).withMetadata({ host }).warn("API readiness probe failed");
   }
-  return { host, status: "unavailable" };
+  return { host, status: ApiHealthStatus.unavailable };
 }

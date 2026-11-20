@@ -10,7 +10,10 @@ export function AppHeader() {
     <Header variant="full">
       <div className="flex w-full min-w-0 items-center gap-3">
         <SidebarToggle />
-        <Separator className="data-[orientation=vertical]:h-5" orientation="vertical" />
+        <Separator
+          className="data-[orientation=vertical]:h-auto data-[orientation=vertical]:self-stretch"
+          orientation="vertical"
+        />
         <AppBreadcrumbs />
         <div className="ml-auto shrink-0">
           <ThemeToggle />

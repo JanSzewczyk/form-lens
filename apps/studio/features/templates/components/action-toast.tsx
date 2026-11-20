@@ -1,49 +1,41 @@
 "use client";
 
 import { toast } from "@szum-tech/design-system";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import * as React from "react";
 
-export type ActionToastFlag = "created" | "saved" | "deleted";
-
-const MESSAGES: Record<ActionToastFlag, string> = {
-  created: "Form created",
-  deleted: "Form deleted",
-  saved: "Form saved"
-};
-
-type ActionToastProps = {
-  /** The outcome the previous page redirected with (`?created=1`, `?saved=1` or `?deleted=1`), if any. */
-  flag: ActionToastFlag | null;
-};
+import { readAndClearToastCookie } from "~/lib/toast/read-toast-cookie";
+import { ToastType } from "~/lib/toast/types";
 
 /**
- * Shows the toast of a redirecting action once, then drops the flag from the URL so a reload does not repeat it.
- * Renders nothing.
+ * Shows the toast a redirecting Server Action left in the toast cookie, once, and clears the cookie. It reads the
+ * cookie after every navigation (`pathname`), which is when the redirect lands. Renders nothing.
+ *
+ * Client Component: it reads `document.cookie` and calls the toast library, both browser-only.
  */
-export function ActionToast({ flag }: ActionToastProps) {
-  const router = useRouter();
+export function ActionToast() {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const handledFlag = React.useRef<ActionToastFlag | null>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the pathname is the trigger, the cookie is read after each navigation
   React.useEffect(() => {
-    if (flag === null) {
-      handledFlag.current = null;
+    const message = readAndClearToastCookie();
+    if (message === null) {
       return;
     }
-    if (handledFlag.current === flag) {
-      return;
+    switch (message.type) {
+      case ToastType.error:
+        toast.error(message.message);
+        break;
+      case ToastType.info:
+        toast.info(message.message);
+        break;
+      case ToastType.warning:
+        toast.warning(message.message);
+        break;
+      default:
+        toast.success(message.message);
     }
-    handledFlag.current = flag;
-    // The ref stops a second run (strict mode, a changed query); the fixed id also keeps sonner to one toast.
-    toast.success(MESSAGES[flag], { id: `forms-${flag}` });
-
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete(flag);
-    const query = params.toString();
-    router.replace(query === "" ? pathname : `${pathname}?${query}`, { scroll: false });
-  }, [flag, pathname, router, searchParams]);
+  }, [pathname]);
 
   return null;
 }

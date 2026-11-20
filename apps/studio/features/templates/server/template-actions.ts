@@ -13,6 +13,7 @@ import {
   replaceTemplate
 } from "~/lib/formlens-api";
 import { createLogger } from "~/lib/logger";
+import { setToastCookie } from "~/lib/toast/server/toast.cookie";
 
 const log = createLogger({ module: "templates-actions" });
 
@@ -78,7 +79,8 @@ export async function createTemplate(input: TemplateFormValues): Promise<Templat
   }
 
   revalidatePath(FORMS_PATH);
-  redirect(`${FORMS_PATH}?created=1`);
+  await setToastCookie("Form created");
+  redirect(FORMS_PATH);
 }
 
 export async function updateTemplate(templateId: string, input: TemplateFormValues): Promise<TemplateActionFailure> {
@@ -99,7 +101,8 @@ export async function updateTemplate(templateId: string, input: TemplateFormValu
   }
 
   revalidatePath(FORMS_PATH);
-  redirect(`${FORMS_PATH}?saved=1`);
+  await setToastCookie("Form saved");
+  redirect(FORMS_PATH);
 }
 
 export async function deleteTemplate(templateId: string): Promise<TemplateActionFailure> {
@@ -113,5 +116,6 @@ export async function deleteTemplate(templateId: string): Promise<TemplateAction
   }
 
   revalidatePath(FORMS_PATH);
-  redirect(`${FORMS_PATH}?deleted=1`);
+  await setToastCookie("Form deleted");
+  redirect(FORMS_PATH);
 }

@@ -2,7 +2,6 @@ import { Button } from "@szum-tech/design-system";
 import { PlusIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ActionToast, type ActionToastFlag } from "~/features/templates/components/action-toast";
 import { TemplateList } from "~/features/templates/components/template-list";
 import { loadTemplates } from "~/features/templates/server/load-templates";
 
@@ -20,7 +19,6 @@ const MAX_SEARCH_LENGTH = 100;
  * per page the last page that keeps `(page - 1) * 12` inside that limit is floor((2**31 - 1) / 12) + 1.
  */
 const MAX_PAGE = 178_956_971;
-const TOAST_FLAGS: Array<ActionToastFlag> = ["created", "saved", "deleted"];
 
 type SearchParams = PageProps<"/forms">["searchParams"] extends Promise<infer Params> ? Params : never;
 
@@ -32,24 +30,22 @@ function parseSearchParams(params: SearchParams) {
   const search = firstValue(params.q).trim().slice(0, MAX_SEARCH_LENGTH);
   const parsedPage = Number.parseInt(firstValue(params.page), 10);
   const page = Number.isSafeInteger(parsedPage) && parsedPage >= 1 ? Math.min(parsedPage, MAX_PAGE) : 1;
-  const flag = TOAST_FLAGS.find((name) => firstValue(params[name]) === "1") ?? null;
 
-  return { flag, page, search };
+  return { page, search };
 }
 
 async function loadData(searchParams: PageProps<"/forms">["searchParams"]) {
-  const { flag, page, search } = parseSearchParams(await searchParams);
+  const { page, search } = parseSearchParams(await searchParams);
   const result = await loadTemplates({ page, search });
 
-  return { flag, now: new Date(), page, result, search };
+  return { now: new Date(), page, result, search };
 }
 
 export default async function FormsPage({ searchParams }: PageProps<"/forms">) {
-  const { flag, now, page, result, search } = await loadData(searchParams);
+  const { now, page, result, search } = await loadData(searchParams);
 
   return (
     <>
-      <ActionToast flag={flag} />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-2">
           <h1 className="text-heading-h1">Forms</h1>

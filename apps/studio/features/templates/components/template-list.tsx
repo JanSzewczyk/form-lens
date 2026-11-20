@@ -12,7 +12,7 @@ import {
 } from "@szum-tech/design-system";
 import { FilePlusIcon, SearchXIcon } from "lucide-react";
 import Link from "next/link";
-import type { TemplatesResult } from "~/features/templates/server/load-templates";
+import { type TemplatesResult, TemplatesStatus } from "~/features/templates/types/templates-result";
 
 import { TemplateCard } from "./template-card";
 import { TemplatePager } from "./template-pager";
@@ -28,11 +28,11 @@ type TemplateListProps = {
 };
 
 export function TemplateList({ result, search, page, now }: TemplateListProps) {
-  if (result.status === "unavailable") {
+  if (result.status === TemplatesStatus.unavailable) {
     return (
       <Alert role="alert" variant="destructive">
         <AlertTitle>The forms could not be loaded</AlertTitle>
-        <AlertDescription>The FormLens API is not available ({result.reason}). Try again in a moment.</AlertDescription>
+        <AlertDescription>The FormLens API is not available. Try again in a moment.</AlertDescription>
       </Alert>
     );
   }

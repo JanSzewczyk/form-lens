@@ -22,13 +22,13 @@ const FORM_PROPERTY_OF_API_PROPERTY: Record<string, string> = {
 };
 
 const MESSAGE = {
-  badRequest: "Interfejs API nie przyjął formularza.",
-  invalid: "Interfejs API odrzucił formularz. Popraw zaznaczone pola.",
-  invalidInput: "Formularz zawiera błędy. Popraw zaznaczone pola.",
-  invalidTemplate: "Interfejs API odrzucił formularz",
-  notFound: "Ten formularz już nie istnieje. Mógł zostać usunięty w innym miejscu.",
-  tooLarge: "Formularz jest zbyt duży, aby go zapisać.",
-  unavailable: "Interfejs API jest niedostępny. Wpisane dane zostały zachowane, spróbuj ponownie za chwilę."
+  badRequest: "The API did not accept the form.",
+  invalid: "The API rejected the form. Fix the marked fields.",
+  invalidInput: "The form has errors. Fix the marked fields.",
+  invalidTemplate: "The API rejected the form",
+  notFound: "This form no longer exists. It may have been deleted elsewhere.",
+  tooLarge: "The form is too large to save.",
+  unavailable: "The API is unavailable. Your input was kept, try again in a moment."
 } as const;
 
 function failure(

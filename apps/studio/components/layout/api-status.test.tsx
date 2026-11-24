@@ -1,3 +1,4 @@
+import { SidebarProvider } from "@szum-tech/design-system";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, test as it, vi } from "vitest";
 
@@ -24,7 +25,7 @@ describe("ApiStatus (server-rendered first state)", () => {
   it("renders API connected with the host when the API is ready (AC3)", async () => {
     server.use(http.get(apiUrl("/health/ready"), () => HttpResponse.json({ status: "ready" })));
 
-    const html = renderToStaticMarkup(await ApiStatus());
+    const html = renderToStaticMarkup(<SidebarProvider>{await ApiStatus()}</SidebarProvider>);
 
     expect(html).toContain("API connected");
     expect(html).toContain("api.internal:8000");
@@ -34,7 +35,7 @@ describe("ApiStatus (server-rendered first state)", () => {
   it("renders API unavailable with the host when the API is not ready (AC3)", async () => {
     server.use(http.get(apiUrl("/health/ready"), () => problem(503)));
 
-    const html = renderToStaticMarkup(await ApiStatus());
+    const html = renderToStaticMarkup(<SidebarProvider>{await ApiStatus()}</SidebarProvider>);
 
     expect(html).toContain("API unavailable");
     expect(html).toContain("api.internal:8000");

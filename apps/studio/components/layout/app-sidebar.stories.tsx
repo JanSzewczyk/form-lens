@@ -167,6 +167,47 @@ FormsSection.test("Shows the Form Lens logo as a link to Forms", async ({ canvas
 });
 
 FormsSection.test(
+  "Keeps the logo link named while the sidebar is collapsed, and still named when it expands again",
+  async ({ canvas, canvasElement, userEvent }) => {
+    const toggle = canvas.getByRole("button", { name: /toggle sidebar/i });
+    const sidebar = canvasElement.querySelector('[data-slot="sidebar"]');
+
+    await expect(canvas.getByRole("link", { name: /form lens/i })).toHaveAttribute("href", "/forms");
+
+    await userEvent.click(toggle);
+    await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+    const collapsedLogo = canvas.getByRole("link", { name: /form lens/i });
+    await expect(collapsedLogo).toHaveAttribute("href", "/forms");
+    await expect(collapsedLogo).toHaveAccessibleName("Form Lens");
+
+    await userEvent.click(toggle);
+    await expect(sidebar).toHaveAttribute("data-state", "expanded");
+    await expect(canvas.getByRole("link", { name: /form lens/i })).toHaveAccessibleName("Form Lens");
+  }
+);
+
+FormsSection.test(
+  "Shows tooltips for the logo and the API status in the collapsed rail only",
+  async ({ canvas, canvasElement, userEvent }) => {
+    const sidebar = canvasElement.querySelector('[data-slot="sidebar"]');
+
+    await userEvent.hover(canvas.getByRole("link", { name: /form lens/i }));
+    await expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    await userEvent.unhover(canvas.getByRole("link", { name: /form lens/i }));
+
+    await userEvent.click(canvas.getByRole("button", { name: /toggle sidebar/i }));
+    await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+
+    await userEvent.hover(canvas.getByRole("link", { name: /form lens/i }));
+    await expect(await screen.findByRole("tooltip")).toHaveTextContent("Form Lens");
+    await userEvent.unhover(canvas.getByRole("link", { name: /form lens/i }));
+
+    await userEvent.hover(canvas.getByText("API connected"));
+    await expect(await screen.findByRole("tooltip")).toHaveTextContent("API connected · localhost:8000");
+  }
+);
+
+FormsSection.test(
   "Keeps an icon-only rail when collapsed, with the links still reachable, and widens again",
   async ({ canvas, canvasElement, userEvent }) => {
     const toggle = canvas.getByRole("button", { name: /toggle sidebar/i });

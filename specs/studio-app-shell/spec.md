@@ -1,7 +1,7 @@
 # Feature: Studio App Shell
 
 **Branch:** feature/studio-app-shell
-**Status:** in-progress  <!-- draft → clarified → planned → in-progress → done; each /sdd command advances it -->
+**Status:** done  <!-- draft → clarified → planned → in-progress → done; each /sdd command advances it -->
 **Type:** feat  <!-- feat | fix | chore | refactor | docs -->
 **Owner:** JanSzewczyk
 **Created:** 2026-11-18

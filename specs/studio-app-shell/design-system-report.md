@@ -59,3 +59,11 @@ inner button).
 `aria-label`, as the Studio already adds) and render the item root as a plain element (`div`, `li`) without `role` or
 `tabindex`, or let the consumer choose the handle with an `asHandle` or `Sortable.Handle` part. The keyboard drag
 sensor then attaches to the handle only.
+
+## 6. Tooltip `aria-describedby` repeats the accessible name
+
+Observed in the Studio's collapsed icon rail (a tooltip on a link whose accessible name is already the tooltip text).
+The Radix tooltip trigger sets `aria-describedby` to the tooltip content, which also holds the label, so a screen
+reader may announce the name twice. The DS `SidebarMenuButton` `tooltip` prop behaves the same. Change: when the
+tooltip text equals the trigger's accessible name, do not set `aria-describedby` (or mark the tooltip content
+`aria-hidden` for that case). Not tested with a screen reader.

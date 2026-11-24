@@ -7,8 +7,7 @@
 
 ### T1: Template search and last-used date in the API
 project: api
-status: in-progress
-branch: feature/studio-app-shell--SAS-d014-T1
+status: done
 depends_on: []
 acceptance: AC22, AC23
 plan: High-level approach (API first); Contracts (HTTP, Port, Migration); File-by-file change list › api
@@ -33,7 +32,7 @@ notes: do not edit `v0001_initial.py` (`api-v0.1.0` is released); templates must
 
 ### T2: Regenerate the API client
 project: @form-lens/api-client
-status: review
+status: done
 depends_on: [T1]
 acceptance: AC22, AC23
 plan: Contracts (Generated client); File-by-file change list › @form-lens/api-client
@@ -45,8 +44,7 @@ notes: never edit `src/generated` by hand; `generate:check` must pass
 
 ### T3: App shell, navigation and live API status
 project: @form-lens/studio
-status: in-progress
-branch: feature/studio-app-shell--SAS-d014-T3
+status: done
 depends_on: []
 acceptance: AC1, AC2, AC3, AC4, AC5, AC24, AC25
 plan: High-level approach (Studio, shell and status polling); File-by-file change list › @form-lens/studio (globals, layouts, `components/layout/*`, `lib/api-health.ts`, `app/api/formlens-status`, placeholders)
@@ -65,7 +63,7 @@ notes: the API client is server-only (`lib/formlens-api.ts`); Studio code rules 
 
 ### T4: Forms list with search, paging and last-used date
 project: @form-lens/studio
-status: review
+status: done
 depends_on: [T2, T3]
 acceptance: AC6, AC7, AC8, AC9, AC10, AC11, AC12, AC18, AC20
 plan: High-level approach (list in URL params, toast after redirect); File-by-file change list › @form-lens/studio (`app/(shell)/forms/page.tsx`, `loading.tsx`, `load-templates`, `template-card`, `template-list`, `template-search`, `template-pager`)
@@ -81,7 +79,7 @@ notes: depends on T3 because it replaces T3's minimal `/forms` page
 
 ### T5: Create, edit and delete a template
 project: @form-lens/studio
-status: review
+status: done
 depends_on: [T2, T3]
 acceptance: AC12, AC13, AC14, AC15, AC16, AC17, AC18, AC19, AC20, AC21, AC24
 plan: High-level approach (react-hook-form + Zod, Server Actions); Contracts (Studio Zod schema); File-by-file change list › @form-lens/studio (`schemas/`, `utils/template-mapping`, `server/load-template`, `server/template-actions`, `server/map-service-error`, editor components, `forms/new`, `forms/[id]/edit`, `not-found`)
@@ -111,7 +109,7 @@ notes: the user-facing text is English (`map-service-error.ts`), the logs carry 
 
 ### T6: End-to-end forms flow
 project: @form-lens/studio
-status: review
+status: done
 depends_on: [T3, T4, T5]
 acceptance: AC1, AC3, AC12, AC18, AC20
 plan: File-by-file change list › @form-lens/studio (`tests/e2e/forms.e2e.ts`); Risks (E2E needs a running API)

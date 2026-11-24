@@ -1,7 +1,7 @@
 # Plan: Studio App Shell
 
 **Spec:** `specs/studio-app-shell/spec.md`
-**Status:** in-progress
+**Status:** done
 
 ## High-level approach
 

@@ -5,6 +5,8 @@ import * as React from "react";
 
 import { type ApiHealth, ApiHealthStatus } from "~/lib/api-health-types";
 
+import { RailTooltip } from "./rail-tooltip";
+
 const STATUS_ENDPOINT = "/api/formlens-status";
 const DEFAULT_INTERVAL_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 5000;
@@ -102,15 +104,16 @@ export function ApiStatusLive({ initial, intervalMs = DEFAULT_INTERVAL_MS }: Api
   }, [intervalMs]);
 
   const isConnected = health.status === ApiHealthStatus.connected;
+  const statusText = isConnected ? "API connected" : "API unavailable";
 
   return (
     <div className="flex min-w-0 flex-col gap-2" role="status">
-      <Status variant={isConnected ? "success" : "error"}>
-        <StatusIndicator />
-        <StatusLabel className="group-data-[collapsible=icon]:sr-only">
-          {isConnected ? "API connected" : "API unavailable"}
-        </StatusLabel>
-      </Status>
+      <RailTooltip label={`${statusText} · ${health.host}`}>
+        <Status variant={isConnected ? "success" : "error"}>
+          <StatusIndicator />
+          <StatusLabel className="group-data-[collapsible=icon]:sr-only">{statusText}</StatusLabel>
+        </Status>
+      </RailTooltip>
       <p className="font-code text-small truncate group-data-[collapsible=icon]:hidden" title={health.host}>
         {health.host}
       </p>

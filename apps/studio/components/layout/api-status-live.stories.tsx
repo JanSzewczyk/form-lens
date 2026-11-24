@@ -1,3 +1,4 @@
+import { SidebarProvider } from "@szum-tech/design-system";
 import * as React from "react";
 import { expect, fn, spyOn, waitFor } from "storybook/test";
 import preview from "~/.storybook/preview";
@@ -111,9 +112,11 @@ const meta = preview.meta({
   component: ApiStatusLive,
   decorators: [
     (Story) => (
-      <div className="bg-sidebar w-60 p-4">
-        <Story />
-      </div>
+      <SidebarProvider>
+        <div className="bg-sidebar w-60 p-4">
+          <Story />
+        </div>
+      </SidebarProvider>
     )
   ],
   title: "Components/Layout/Api Status Live"

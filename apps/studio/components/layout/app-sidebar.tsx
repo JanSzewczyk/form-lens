@@ -3,6 +3,7 @@ import { FileTextIcon } from "lucide-react";
 import Link from "next/link";
 import type * as React from "react";
 
+import { RailTooltip } from "./rail-tooltip";
 import { SidebarNav } from "./sidebar-nav";
 
 type AppSidebarProps = {
@@ -14,12 +15,18 @@ export function AppSidebar({ status }: AppSidebarProps) {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-4 group-data-[collapsible=icon]:p-2">
-        <Link className="flex items-center gap-3 rounded group-data-[collapsible=icon]:justify-center" href="/forms">
-          <span className="bg-primary text-primary-foreground flex size-9 shrink-0 items-center justify-center rounded">
-            <FileTextIcon aria-hidden="true" className="size-5" />
-          </span>
-          <span className="text-heading-h4 font-bold group-data-[collapsible=icon]:hidden">Form Lens</span>
-        </Link>
+        <RailTooltip label="Form Lens">
+          <Link
+            aria-label="Form Lens"
+            className="flex items-center gap-3 rounded group-data-[collapsible=icon]:justify-center"
+            href="/forms"
+          >
+            <span className="bg-primary text-primary-foreground flex size-9 shrink-0 items-center justify-center rounded">
+              <FileTextIcon aria-hidden="true" className="size-5" />
+            </span>
+            <span className="text-heading-h4 font-bold group-data-[collapsible=icon]:hidden">Form Lens</span>
+          </Link>
+        </RailTooltip>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>

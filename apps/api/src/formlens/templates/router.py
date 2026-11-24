@@ -77,8 +77,12 @@ def list_templates(
         str | None,
         Query(
             max_length=MAX_TEMPLATE_NAME_LENGTH,
-            description="Keep templates whose name contains this text, ignoring case. `%` and `_` "
-            "are taken literally. Omit it to keep every template.",
+            # No NUL: SQLite reads a LIKE pattern as a C string and would cut it there. Names hold no NUL anyway.
+            pattern=r"^[^\x00]*$",
+            description="Keep templates whose name contains this text, ignoring case by Unicode case folding. "
+            "`%` and `_` are taken literally. A NUL character is refused. The folding has limits: `ß` matches "
+            "`ss`, `İstanbul` is not found by `istanbul` (İ folds to `i` plus a combining dot), and a composed "
+            "accent (`é`) does not match a combining one (`e` and U+0301). Omit it to keep every template.",
             examples=["inv"],
         ),
     ] = None,

@@ -221,14 +221,97 @@ def test_an_empty_search_keeps_every_template_and_counts_them_all(repository: Sq
     assert ([item.name for item in found], total) == (["Invoice", "Lease"], 3)
 
 
-def test_a_search_of_spaces_is_not_trimmed(repository: SqliteTemplateRepository) -> None:
-    add_named(repository, "Invoice", "VAT invoice", "VAT  invoice")
+@pytest.mark.parametrize("search", ["\x00", "a\x00zzz", "inv\x00"], ids=["only-nul", "nul-inside", "nul-at-the-end"])
+def test_a_search_with_a_nul_character_matches_nothing(repository: SqliteTemplateRepository, search: str) -> None:
+    # A search cut at its NUL would be `%`, `%a` or `%inv`: it would match all, `Visa` or `Pro-inv`.
+    add_named(repository, "Invoice", "Visa", "Pro-inv")
 
-    one, one_total = repository.page(search=" ", limit=10, offset=0)
-    two, two_total = repository.page(search="  ", limit=10, offset=0)
+    found, total = repository.page(search=search, limit=10, offset=0)
 
-    assert ([item.name for item in one], one_total) == (["VAT invoice", "VAT  invoice"], 2)
-    assert ([item.name for item in two], two_total) == (["VAT  invoice"], 1)
+    assert (found, total) == ([], 0)
+
+
+@pytest.mark.parametrize(
+    "search",
+    ["%\x00", "\x00%", "_\x00", "\x00_", "\\\x00", "\x00\\%", "\u0142\x00", "\u0141\x00\u00f3"],
+    ids=[
+        "percent-nul",
+        "nul-percent",
+        "underscore-nul",
+        "nul-underscore",
+        "backslash-nul",
+        "nul-backslash-percent",
+        "non-ascii-nul",
+        "non-ascii-around-nul",
+    ],
+)
+def test_a_nul_next_to_a_wildcard_a_backslash_or_a_non_ascii_letter_matches_nothing(
+    repository: SqliteTemplateRepository, search: str
+) -> None:
+    add_named(repository, "100% sure", "a_b", "back\\slash", "\u0141\u00f3d\u017a")
+
+    found, total = repository.page(search=search, limit=10, offset=0)
+
+    assert (found, total) == ([], 0)
+
+
+@pytest.mark.parametrize(
+    ("limit", "offset"), [(1, 0), (1, 1), (100, 0), (5, 1000)], ids=["first", "second", "wide", "past"]
+)
+def test_a_search_with_a_nul_returns_an_empty_page_and_a_zero_total_whatever_the_paging(
+    repository: SqliteTemplateRepository, limit: int, offset: int
+) -> None:
+    add_named(repository, "Invoice", "Visa", "Pro-inv")
+
+    found, total = repository.page(search="inv\x00", limit=limit, offset=offset)
+    everything, everything_total = repository.page(search=None, limit=10, offset=0)
+
+    assert (found, total) == ([], 0)
+    assert ([item.name for item in everything], everything_total) == (["Invoice", "Visa", "Pro-inv"], 3)
+
+
+@pytest.mark.parametrize(
+    "search",
+    ["\u039a\u039f\u03a3\u039c\u039f\u03a3", "\u03ba\u03bf\u03c3\u03bc\u03bf\u03c2"],
+    ids=["upper-search-with-final-sigma", "lower-search-with-final-sigma-form"],
+)
+def test_a_search_treats_the_final_sigma_as_a_sigma(repository: SqliteTemplateRepository, search: str) -> None:
+    # `str.lower()` writes the last capital sigma as a final sigma, so lowering would miss; casefold does not.
+    add_named(repository, "\u03ba\u03bf\u03c3\u03bc\u03bf\u03c3", "Lease")
+
+    found, total = repository.page(search=search, limit=10, offset=0)
+
+    assert ([item.name for item in found], total) == (["\u03ba\u03bf\u03c3\u03bc\u03bf\u03c3"], 1)
+
+
+@pytest.mark.parametrize(
+    ("search", "expected"),
+    [
+        (" ", ["VAT invoice", "VAT  invoice", "VAT   invoice"]),
+        ("  ", ["VAT  invoice", "VAT   invoice"]),
+        ("   ", ["VAT   invoice"]),
+        ("    ", []),
+    ],
+    ids=["one-space", "two-spaces", "three-spaces", "four-spaces"],
+)
+def test_a_search_of_only_spaces_is_not_trimmed_and_matches_the_names_with_that_run_of_spaces(
+    repository: SqliteTemplateRepository, search: str, expected: list[str]
+) -> None:
+    add_named(repository, "Invoice", "VAT invoice", "VAT  invoice", "VAT   invoice")
+
+    found, total = repository.page(search=search, limit=10, offset=0)
+
+    assert ([item.name for item in found], total) == (expected, len(expected))
+
+
+def test_a_search_for_a_plain_i_finds_a_dotted_capital_i_because_it_folds_to_i_and_a_dot(
+    repository: SqliteTemplateRepository,
+) -> None:
+    add_named(repository, "Lease", "\u0130stanbul")
+
+    found, total = repository.page(search="i", limit=10, offset=0)
+
+    assert ([item.name for item in found], total) == (["\u0130stanbul"], 1)
 
 
 @pytest.fixture

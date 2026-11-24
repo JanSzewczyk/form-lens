@@ -28,7 +28,9 @@ class TemplateRepository(Protocol):
         """Return one page, oldest first, and the number of templates that match, across all pages.
 
         `search`, when given, keeps the templates whose name contains it, ignoring case; `%` and `_` in it are
-        taken literally.
+        taken literally. Case is folded as in Unicode case folding, with no normalisation: `ß` matches `ss`, `İ`
+        folds to `i` and a combining dot, and a composed accent does not match a combining one. A search with a NUL
+        matches nothing, as no name holds one.
         """
         ...
 
@@ -128,8 +130,11 @@ class SqliteTemplateRepository:
         The search is `casefold(name) LIKE casefold(:pattern)` with a backslash as the escape character, where
         `casefold` is the Unicode case folding registered on every connection, so letters outside ASCII match in
         any case. The total counts the same rows. An empty search keeps every template; a search of spaces is not
-        trimmed.
+        trimmed. A NUL in the search matches nothing and the database is not asked: SQLite reads the LIKE pattern as
+        a C string and would cut it at the NUL, so `a`, NUL, `zzz` would become `%a` and match the names ending in `a`.
         """
+        if search and "\x00" in search:
+            return [], 0
         casefold = getattr(func, CASEFOLD_FUNCTION)
         match = (
             casefold(TemplateRow.name).like(casefold(_contains_pattern(search)), escape=LIKE_ESCAPE) if search else None

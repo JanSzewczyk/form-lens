@@ -1347,7 +1347,7 @@
         "operationId": "list_templates",
         "parameters": [
           {
-            "description": "Keep templates whose name contains this text, ignoring case. `%` and `_` are taken literally. Omit it to keep every template.",
+            "description": "Keep templates whose name contains this text, ignoring case by Unicode case folding. `%` and `_` are taken literally. A NUL character is refused. The folding has limits: `ß` matches `ss`, `İstanbul` is not found by `istanbul` (İ folds to `i` plus a combining dot), and a composed accent (`é`) does not match a combining one (`e` and U+0301). Omit it to keep every template.",
             "in": "query",
             "name": "search",
             "required": false,
@@ -1355,13 +1355,14 @@
               "anyOf": [
                 {
                   "maxLength": 100,
+                  "pattern": "^[^\\x00]*$",
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Keep templates whose name contains this text, ignoring case. `%` and `_` are taken literally. Omit it to keep every template.",
+              "description": "Keep templates whose name contains this text, ignoring case by Unicode case folding. `%` and `_` are taken literally. A NUL character is refused. The folding has limits: `ß` matches `ss`, `İstanbul` is not found by `istanbul` (İ folds to `i` plus a combining dot), and a composed accent (`é`) does not match a combining one (`e` and U+0301). Omit it to keep every template.",
               "examples": [
                 "inv"
               ],

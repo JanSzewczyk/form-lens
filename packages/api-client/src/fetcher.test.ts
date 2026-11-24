@@ -54,6 +54,18 @@ describe("customFetch", () => {
     expect(sentRequest(mock).url).toBe("http://localhost:8000/v1/templates?limit=5");
   });
 
+  it.each(["//evil.example/v1/templates", "https://evil.example/v1/templates"])(
+    "refuses a path that leaves the configured origin: %s",
+    async (path) => {
+      const { configureApiClient, customFetch } = await loadFetcher();
+      const mock = stubFetch(jsonResponse({}));
+      configureApiClient({ baseUrl: "http://localhost:8000" });
+
+      await expect(customFetch(path, { method: "GET" })).rejects.toThrow("outside the configured");
+      expect(mock).not.toHaveBeenCalled();
+    },
+  );
+
   it("returns data, status and headers for a JSON response", async () => {
     const { configureApiClient, customFetch } = await loadFetcher();
     stubFetch(jsonResponse({ id: "t1" }, { status: 201, headers: { "content-type": "application/json", etag: "v1" } }));

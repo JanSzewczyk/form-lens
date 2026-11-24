@@ -382,23 +382,185 @@ def test_a_search_of_a_hundred_characters_is_accepted_and_a_longer_one_is_a_422(
     assert refused.json()["type"] == problem_type("validation-error")
 
 
-def test_a_search_made_of_a_space_is_not_trimmed_and_matches_names_with_a_space(client: TestClient) -> None:
-    for name in ("Invoice", "VAT invoice"):
+@pytest.mark.parametrize("search", ["%00", "a%00zzz", "inv%00"], ids=["only-nul", "nul-inside", "nul-at-the-end"])
+def test_a_search_with_a_nul_character_is_a_422_problem_not_a_list_of_templates(
+    client: TestClient, search: str
+) -> None:
+    for name in ("Invoice", "Visa", "Pro-inv"):
         create(client, name=name)
 
-    page = client.get(URL, params={"search": " "}).json()
+    response = client.get(f"{URL}?search={search}")
 
-    assert (names_of(page), page["total"]) == (["VAT invoice"], 1)
+    assert response.status_code == 422
+    assert response.headers["content-type"] == PROBLEM_MEDIA_TYPE
+    body = response.json()
+    assert body["type"] == problem_type("validation-error")
+    assert body["status"] == 422
+    assert body["errors"][0]["loc"] == ["query", "search"]
+    assert body["errors"][0]["type"] == "string_pattern_mismatch"
+    assert "items" not in body
 
 
-def test_a_search_of_several_spaces_matches_only_names_with_that_many_spaces_in_a_row(client: TestClient) -> None:
-    for name in ("Invoice", "VAT invoice", "VAT  invoice"):
+@pytest.mark.parametrize(
+    "search",
+    ["%25%00", "%00%25", "_%00", "%00_", "%5C%00", "%00%5C%25", "%C5%82%00"],
+    ids=[
+        "percent-nul",
+        "nul-percent",
+        "underscore-nul",
+        "nul-underscore",
+        "backslash-nul",
+        "nul-backslash-percent",
+        "non-ascii-nul",
+    ],
+)
+def test_a_nul_next_to_a_wildcard_or_a_backslash_is_a_422_and_never_a_match_of_the_part_before_it(
+    client: TestClient, search: str
+) -> None:
+    for name in ("100% sure", "a_b", "back\\slash", "\u0142\u00f3d\u017a"):
         create(client, name=name)
 
-    page = client.get(URL, params={"search": "   "}).json()
+    response = client.get(f"{URL}?search={search}")
 
-    assert (page["items"], page["total"]) == ([], 0)
-    assert names_of(client.get(URL, params={"search": "  "}).json()) == ["VAT  invoice"]
+    assert response.status_code == 422
+    assert response.json()["type"] == problem_type("validation-error")
+    assert "items" not in response.json()
+
+
+@pytest.mark.parametrize(
+    "paging",
+    ["limit=1&offset=1", "limit=100&offset=0", "limit=5&offset=1000"],
+    ids=["inside-the-list", "largest-page", "past-the-end"],
+)
+def test_a_nul_in_a_search_is_a_422_whatever_the_valid_paging_and_a_populated_list_is_not_touched(
+    client: TestClient, paging: str
+) -> None:
+    for name in ("Invoice", "Visa", "Pro-inv"):
+        create(client, name=name)
+
+    refused = client.get(f"{URL}?search=inv%00&{paging}")
+    listed = client.get(URL)
+
+    assert refused.status_code == 422
+    assert "total" not in refused.json()
+    assert (names_of(listed.json()), listed.json()["total"]) == (["Invoice", "Visa", "Pro-inv"], 3)
+
+
+def test_the_422_for_a_nul_in_a_search_lists_only_loc_msg_and_type_and_never_repeats_the_search(
+    client: TestClient,
+) -> None:
+    response = client.get(f"{URL}?search=secret%00zzz")
+
+    body = response.json()
+    assert response.status_code == 422
+    assert [set(error) for error in body["errors"]] == [{"loc", "msg", "type"}]
+    assert body["errors"][0]["loc"] == ["query", "search"]
+    assert "secret" not in response.text
+    assert "\x00" not in response.text.replace("[^\\x00]", "")
+    assert "\\u0000" not in response.text
+
+
+def test_a_nul_inside_the_length_limit_is_refused_for_the_nul_and_one_past_it_for_the_length(
+    client: TestClient,
+) -> None:
+    at_the_limit = client.get(f"{URL}?search={'a' * 99}%00")
+    over_the_limit = client.get(f"{URL}?search={'a' * 100}%00")
+
+    assert at_the_limit.status_code == 422
+    assert [error["type"] for error in at_the_limit.json()["errors"]] == ["string_pattern_mismatch"]
+    assert over_the_limit.status_code == 422
+    assert [(e["loc"], e["type"]) for e in over_the_limit.json()["errors"]] == [
+        (["query", "search"], "string_too_long")
+    ]
+
+
+def test_a_search_exactly_as_long_as_a_name_can_be_finds_that_name_and_nothing_else(client: TestClient) -> None:
+    name = "a" * (MAX_TEMPLATE_NAME_LENGTH - 1) + "B"
+    create(client, name=name)
+    create(client, name="a" * MAX_TEMPLATE_NAME_LENGTH)
+
+    page = client.get(URL, params={"search": name.upper()}).json()
+
+    assert (names_of(page), page["total"]) == ([name], 1)
+
+
+@pytest.mark.parametrize(
+    "search", ["%0A", "a%0A", "%0D%0A", "%09", "%01", "%1F"], ids=["lf", "text-lf", "crlf", "tab", "soh", "us"]
+)
+def test_a_control_character_other_than_nul_is_not_refused_in_a_search(client: TestClient, search: str) -> None:
+    create(client, name="Invoice")
+
+    response = client.get(f"{URL}?search={search}")
+
+    assert response.status_code == 200
+    assert (response.json()["items"], response.json()["total"]) == ([], 0)
+
+
+@pytest.mark.parametrize(
+    ("query", "field", "error_type"),
+    [
+        ("limit=1%00", "limit", "int_parsing"),
+        ("limit=%005", "limit", "int_parsing"),
+        ("offset=0%00", "offset", "int_parsing"),
+    ],
+    ids=["nul-after-limit", "nul-before-limit", "nul-after-offset"],
+)
+def test_a_nul_in_a_paging_parameter_is_its_own_422_and_does_not_blame_the_search(
+    client: TestClient, query: str, field: str, error_type: str
+) -> None:
+    create(client, name="Invoice")
+
+    response = client.get(f"{URL}?search=inv&{query}")
+
+    assert response.status_code == 422
+    assert [(error["loc"], error["type"]) for error in response.json()["errors"]] == [(["query", field], error_type)]
+
+
+def test_a_nul_in_a_parameter_the_list_does_not_know_is_ignored(client: TestClient) -> None:
+    create(client, name="Invoice")
+
+    page = client.get(f"{URL}?search=inv&other=a%00b").json()
+
+    assert (names_of(page), page["total"]) == (["Invoice"], 1)
+
+
+@pytest.mark.parametrize(
+    ("name", "search"),
+    [
+        ("\u03ba\u03bf\u03c3\u03bc\u03bf\u03c3", "\u039a\u039f\u03a3\u039c\u039f\u03a3"),
+        ("\u03ba\u03bf\u03c3\u03bc\u03bf\u03c3", "\u03ba\u03bf\u03c3\u03bc\u03bf\u03c2"),
+    ],
+    ids=["upper-search-with-final-sigma", "lower-search-with-final-sigma-form"],
+)
+def test_a_search_treats_the_final_sigma_as_a_sigma(client: TestClient, name: str, search: str) -> None:
+    # `str.lower()` writes the last capital sigma as a final sigma, so lowering would miss; casefold does not.
+    create(client, name=name)
+    create(client, name="Lease agreement")
+
+    page = client.get(URL, params={"search": search}).json()
+
+    assert (names_of(page), page["total"]) == ([name], 1)
+
+
+@pytest.mark.parametrize(
+    ("search", "expected"),
+    [
+        (" ", ["VAT invoice", "VAT  invoice", "VAT   invoice"]),
+        ("  ", ["VAT  invoice", "VAT   invoice"]),
+        ("   ", ["VAT   invoice"]),
+        ("    ", []),
+    ],
+    ids=["one-space", "two-spaces", "three-spaces", "four-spaces"],
+)
+def test_a_search_of_only_spaces_matches_the_names_that_hold_that_run_of_spaces(
+    client: TestClient, search: str, expected: list[str]
+) -> None:
+    for name in ("Invoice", "VAT invoice", "VAT  invoice", "VAT   invoice"):
+        create(client, name=name)
+
+    page = client.get(URL, params={"search": search}).json()
+
+    assert (names_of(page), page["total"]) == (expected, len(expected))
 
 
 @pytest.mark.parametrize(

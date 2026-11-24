@@ -47,8 +47,8 @@ Studio users get the application foundation from the FormLens design (the naviga
 - [x] AC11: given the API is unavailable → the Forms page shows an error message instead of the list, and the shell still works.
 - [x] AC12: given the create page with name "Invoice" and one field `invoice_number` of type text → Create form stores the template and returns to the Forms list, which shows the new template and a "Form created" message.
 - [x] AC13: given an empty name or no fields → Create form / Save form is refused and the missing input is pointed out next to it.
-- [ ] AC14: given two fields with the same key → saving is refused with a message on the duplicate key.
-- [ ] AC15: given a field of type choice with no allowed values → saving is refused with a message on that field.
+- [x] AC14: given two fields with the same key → saving is refused with a message on the duplicate key.
+- [x] AC15: given a field of type choice with no allowed values → saving is refused with a message on that field.
 - [x] AC16: given fields added, removed or reordered → the API response preview shows the keys in the same order with their types.
 - [x] AC17: given the user clicks Edit on a template → the edit page shows its name, description and fields, including required, allowed values, minimum, maximum and pattern.
 - [x] AC18: given a changed template → Save form stores it, its version goes up by one, and the list shows the new data.

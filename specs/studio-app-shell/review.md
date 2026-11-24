@@ -1,149 +1,141 @@
 # Review: Studio App Shell
 
 **Branch:** feature/studio-app-shell
-**Date:** 2026-11-19
+**Date:** 2026-11-24
 **Verdict:** NOT READY
 
-Diff: `git diff 5645f09` (merge base with `main`), `**/generated/**`, lockfiles and snapshots excluded; untracked
-`.claude/launch.json` excluded (local preview config). 99 files. Judged against the constitution as updated on
-2026-11-19 (Studio user text in English; MSW and mimicry-js in the Studio test stack).
+Round 1 (2026-11-19): NOT READY, 9 must-fix items (AC14/AC15, stale 422 banner, hydration, not-found 404 and loading
+scope, English text, Unicode search, MSW/mimicry-js, toast cookies, separator); all verified closed in round 2.
+
+Diff: `git diff 5645f09` (merge base with `main`) through `d69689d`, `**/generated/**`, lockfiles and snapshots
+excluded; untracked `.claude/launch.json` excluded (local preview config); uncommitted change: status lines in
+`tasks.md` only. 117 files, +9584 / −165. Judged against the updated constitution (§7 English Studio text; §1 MSW and
+mimicry-js) and the updated spec (AC2: icon-only rail on collapse).
 
 ## Spec compliance (spec-verifier)
 
-spec-verifier: `satisfied: true`, AC1–AC25 met. The QA check (live app) contradicts AC14 and AC15; this review
-takes the QA result.
+spec-verifier: `satisfied: true`, AC1–AC25 met, T1–T6 complete, no non-goal violation.
 
 | AC | Status | Evidence |
 |----|--------|----------|
-| AC1–AC4, AC6–AC13, AC16–AC23, AC25 | met | spec-verifier: code, unit tests, stories, E2E; QA confirmed AC6–AC9, AC12, AC13, AC16–AC18, AC20–AC22 (AC22 ASCII only, see Audits) |
-| AC5 | met, untested | code and stories only; QA confirmed theme survives reload; no test at any layer |
-| AC14 | **not met** | QA F1: a refused submit with a duplicate key shows no message; the message appears only after the next edit and can describe the previous state |
-| AC15 | **not met** | QA F1: same behaviour for a choice field without allowed values |
-| AC22 | met for ASCII only | python-reviewer: `lower()` in SQLite folds ASCII only (`templates/repository.py:128-133`); "Łódź Faktura" not found by `search=łódź`; owner decided to fix Unicode folding |
-| AC24 | met, untested at page level | stories; QA confirmed 375 px; no page-level phone-width test |
+| AC1–AC25 | met | spec-verifier: code, unit tests, stories, E2E; QA PASS on 7 flows |
+| AC2 | met | icon rail with tooltips (QA); `aria-expanded` gap accepted, see `## Accepted` |
+| AC5 | met | e2e `forms.e2e.ts` (theme survives reload) |
+| AC14, AC15 | met | QA: messages appear at once on a refused submit, six cases |
+| AC22 | met (edge defect) | Unicode fold verified live (python-reviewer, QA with Polish letters); NUL in `search` defect, see below |
+| AC23 | met | QA: `last_used_at` = extraction `created_at` |
+| AC24 | met | e2e `/forms` at phone width; QA 375 px |
 
-- Out of scope / non-goal violations (minor, no non-goal violation): `specs/capabilities.yml`, `E2E_PORT` in
-  `apps/studio/playwright.config.ts`, `@source` in `apps/studio/app/globals.css`, head-revision change in
-  `apps/api/tests/extractions/test_lifespan.py`, extra "Form saved" / "Form deleted" toasts.
-- Drift: test files outside task `files` globs (`apps/api/tests/migrations/test_migrations.py` vs planned
-  `tests/test_migrations.py`, `app/(shell)/forms/page.test.tsx`, `app/(shell)/placeholder-pages.test.tsx`,
-  `app/page.test.ts`); `specs/capabilities.yml` not in any task.
+**AC22 and NUL in `search` — judged an acceptable blocker, not an unmet AC.** `search=%00` returns every template and
+`search=a%00zzz` returns a template whose name has no NUL (SQLite `LIKE` stops reading the pattern at NUL;
+python-reviewer, reproduced live). Reasons:
+- AC22's stated scenario (`search=inv` → names containing "inv", case-insensitive, `total` counts only those) passes,
+  as do the non-ASCII, `%`/`_` literal and empty-search cases; the spec-verifier, the designated AC judge, reports it
+  met. Round 1 overrode the verifier only where live evidence broke the AC's own scenario (AC14/AC15).
+- Names cannot contain NUL (`apps/api/src/formlens/templates/models.py:137`), so the correct answer is an empty page;
+  the wrong answer returns only rows the unfiltered list already returns: no data exposure, no security impact; the
+  Studio search box cannot send a NUL.
+- python-reviewer rated it 🟡 (changes requested), so it is not a warning: a non-critical audit finding is an
+  acceptable blocker. Fix is small (see Verdict).
+
+- Out of scope (acceptable blockers until accepted): `specs/capabilities.yml`; `E2E_PORT` in
+  `apps/studio/playwright.config.ts`; extra "Form saved" / "Form deleted" toasts; `debug` log level for the polled
+  path in `apps/studio/proxy.ts:19`. No non-goal violation.
+- Drift (warnings): `plan.md` still describes superseded decisions (Polish user text, `?created=1` toast flag, no
+  MSW/mimicry-js, route group `forms/(list)`, `aria-expanded` in AC2/T3 text, migration test path
+  `tests/migrations/test_migrations.py`); `lib/toast/**`, `tests/unit/msw/**`, `vitest.setup.ts`, the
+  template-action-result schema and placeholder/page tests lie outside every task `files` glob; whitespace-only search
+  test missing by name (T1 asks for it); a few non-HTTP `vi.mock` stubs remain.
 
 ## Tests
 
-- api: passed 1475/1475 (10 deselected, `-m slow`) · coverage 99 % (target ≥ 95 % branch) · ruff, mypy,
-  lint-imports, Schemathesis pass; `openapi-check` / oasdiff exit code not confirmed.
-- @form-lens/api-client: passed 18/18 · coverage 100 % (target 100 %) · type-check and `generate:check` OK.
-- @form-lens/studio: `test:unit:coverage` passed · unit coverage **52.7 % statements (target > 70 %)** ·
-  Storybook 191/191 · Playwright chromium 17/17 · type-check OK · `next build` OK · Biome OK (2 warnings, 1 info) ·
-  Knip OK.
+- api: passed 1520/1520 (10 deselected, `-m slow`) · coverage 99 % (target ≥ 95 % branch) · ruff, mypy,
+  lint-imports pass · Schemathesis 3 seeds pass · `export_openapi --check` exit 0 · oasdiff and Spectral not run (need
+  Docker) · pip-audit: deps unchanged.
+- @form-lens/api-client: passed 18/18 · coverage 100 % (target 100 %) · `generate:check` OK · type-check OK.
+- @form-lens/studio: unit 259/259 · coverage 71.6 % statements / 78.4 % branches (target > 70 %) · Storybook 208/208 ·
+  Playwright chromium 29/29 (production build) · type-check OK · Biome OK (2 warnings, 1 info: local CLI/schema
+  version) · Knip OK.
 
 ## Constitution rules
 
-- DO NOT rename the `Check ✅` or `Audit 🔒` jobs — respected (no `.github/` change in the diff).
-- DO NOT edit `packages/api-client/src/generated` or `apps/api/openapi.json` by hand — respected (`generate:check`
-  passes; `openapi.json` changes alongside the router/schemas; `openapi-check` exit not confirmed).
-- DO NOT put a client-supplied regular expression anywhere but `patterns.py` — respected (no `re` use added under
-  `apps/api/src`; the Studio only length-checks and forwards `pattern` — `template-form-schema.ts:50`,
-  `template-mapping.ts:36` — and builds no `RegExp`).
-- DO NOT edit migration `v0001_initial.py` after the first merge — respected (new `v0002_template_last_used.py`;
-  v0001 untouched).
+- DO NOT rename the `Check ✅` or `Audit 🔒` jobs — respected (0 files under `.github/` in the diff).
+- DO NOT edit `packages/api-client/src/generated` or `apps/api/openapi.json` by hand — respected (3 generated files
+  and `openapi.json` change with the router; `generate:check` OK, `export_openapi --check` exit 0).
+- DO NOT put a client-supplied regular expression anywhere but `patterns.py` — respected (0 `re` imports/calls added
+  under `apps/api/src`; the Studio builds no `RegExp` from `pattern`).
+- DO NOT edit migration `v0001_initial.py` after the first merge — respected (v0001 not in the diff; new v0002).
 - DO NOT change the uv version in only one place — respected (no Dockerfile/workflow change).
 - DO NOT expect Dependabot to bump the Spectral, oasdiff, pip-audit and `huggingface_hub` pins — respected (no
-  pin change).
-- DO NOT use `&&` for conditional rendering in the Studio — respected (0 `&& (` / `&& <` in changed `.tsx`).
+  `Makefile` / `download_models.sh` change).
+- DO NOT use `&&` for conditional rendering in the Studio — respected (0 added `&& (` / `&& <` in changed `.tsx`).
 - DO NOT run `template-sync` — respected (not applicable).
-- §7 error handling (updated): **violated** — Polish user-facing text in
-  `apps/studio/features/templates/server/map-service-error.ts:25-33` (7 messages); the rule is English.
-- §1 Studio test stack (updated): HTTP mocked with `vi.mock` / `fetch` stubs instead of MSW, no mimicry-js builders
-  (`features/templates/server/*.test.ts`, `lib/api-health.test.ts`, `app/api/formlens-status/route.test.ts`;
-  `features/templates/utils/template-fixtures.ts` is a hand-written fixture module).
-- §6 coverage: Studio unit 52.7 % < 70 %.
+- §7 Studio user text in English — respected (spec-verifier; QA: English only on 9 routes).
+- §1 Studio test stack (MSW, mimicry-js) — respected for HTTP; a few non-HTTP `vi.mock` stubs remain (warning).
+- §6 coverage — met: api 99 % ≥ 95 %, studio unit 71.6 % > 70 %, api-client 100 %.
 
 ## Audits
 
-### QA check (agent:testing:qa-engineer) — FAIL
+### QA check (agent:testing:qa-engineer) — PASS
 
-- F1 (High): AC14, AC15 not met; also invalid key format and min > max — a refused submit shows no message.
-- F2 (Medium): stale API 422 banner stays after a later client-side refusal on the edit page.
-- F3 (Medium): hydration mismatch on every edit page with fields — random ids in `data-value` /
-  `aria-describedby` of `SortableItem` (`features/templates/components/field-row.tsx:81`, via
-  `template-editor.tsx:198`).
-- F4 (Low): API-derived messages in Polish (`map-service-error.ts:25-33`).
-- F5 (Low): "Form not found" returns HTTP 200 — `app/(shell)/forms/loading.tsx` streams before `notFound()`.
-- Not checked: AC3 unavailable state, AC10, AC11, AC23 UI, AC25 transition, limits, drag-and-drop.
+7/7 flows pass (shell and icon rail, API status flip within 60 s both ways, create validation six cases, list/search
+incl. Polish letters, paging, edit/delete incl. 422 banner clearing, not-found HTTP 404, theme, 375 px, AC23,
+English UI on 9 routes). Low observations: separator 32 px = row height in a 64 px header; dev-server-only "script
+tag" console warning on not-found; status dot and logo without tooltip in the rail; field row `div role="button"`
+wraps inputs; `?page=99` shows "Page 99 of 2". QA left one failed extraction row in the gitignored local
+`apps/api/formlens.db`.
 
-### python-reviewer (api) — changes requested, 0🔴 1🟡 2🔵
+### python-reviewer (api) — changes requested, 0🔴 1🟡 3🔵
 
-- 🟡 AC22 case-insensitive for ASCII only (`templates/repository.py:128-133`); owner: fix Unicode folding.
-- 🔵 `mark_used` runs in a second transaction after `repository.add` commits; a failure returns 500 although the
-  extraction is stored (`extractions/service_layer/service.py`); contract undecided.
-- 🔵 no non-ASCII / empty / whitespace search tests (`tests/templates/test_api.py`, `test_repository.py`).
+- 🟡 NUL in `search` breaks the filter (`templates/router.py:76-84` accepts it; `templates/repository.py:133-135`
+  passes it to `LIKE`); no test.
+- 🔵 final-sigma tests do not tell `casefold()` from `lower()`.
+- 🔵 Unicode limits (ß matches "ss", İ vs i, NFC vs NFD) documented only in test comments, not OpenAPI/README.
+- 🔵 `mark_used` failure logged at ERROR (optional).
 
-### nextjs:code-reviewer (studio) — changes requested, 0🔴 2🟡 5🔵
+### nextjs:code-reviewer (studio) — APPROVE, 0🔴 0🟡 5🔵
 
-- 🟡 nextjs-rules in `features/templates/server/load-templates.ts`: no `import "server-only"`, default logger
-  (`:3`) instead of `createLogger({ module })`, `status:` instead of `statusCode:` (`:37`), API-supplied `title`
-  rendered as `reason` (`:38`, shown in `components/template-list.tsx:35`) instead of a fixed message. Same logger
-  pattern in `lib/api-health.ts:6` and `app/api/formlens-status/route.ts:4` (route also lacks `server-only`).
-- 🟡 AC5 has no test at any layer.
-- 🔵 string-literal unions instead of const enum objects (`load-templates.ts:18-19`, `lib/api-health-types.ts`).
-- 🔵 eight components without stories.
 - 🔵 three actions in `features/templates/server/template-actions.ts` instead of `server/actions/*.action.ts`.
-- 🔵 HTTP mocked via `vi.mock` / `fetch` instead of MSW (owner: adopt MSW and mimicry-js).
-- 🔵 `app/(shell)/forms/loading.tsx` also wraps `/forms/new` and `/forms/[id]/edit`: list skeleton on "New form",
-  and the HTTP 200 for not-found (F5).
-- 🔵 toast via `?created=1` / `?saved=1` / `?deleted=1` URL flags (`template-actions.ts:81,116`,
-  `components/action-toast.tsx`) instead of toast cookies (owner: use toast cookies per nextjs-rules).
+- 🔵 `load-template.ts` literal union `"found" | "not-found" | "unavailable"` instead of a const object.
+- 🔵 7 components without own stories (field-row, template-pager, template-search, app-header, app-breadcrumbs,
+  sidebar-nav, api-status).
+- 🔵 vitest config lacks `mockReset` / `restoreMocks`.
+- 🔵 Storybook a11y addon `test: "todo"` (`apps/studio/.storybook/preview.tsx:78`).
 
 ### react:accessibility-audit (studio, static) — 🟡 0🔴 2🟡 1🔵
 
 | # | Sev | Where | Problem | Fix |
 |---|-----|-------|---------|-----|
-| 1 | 🟡 | `features/templates/components/template-editor.tsx` submit path (F1) | 3.3.1 Error Identification: a refused submit announces no error (same root cause as AC14/AC15) | show and announce field errors on submit |
-| 2 | 🟡 | `features/templates/components/field-row.tsx:87-89` | 4.1.2 drag handle has no accessible name (icon is `aria-hidden`); up/down buttons give a keyboard alternative | `aria-label={\`Reorder field ${number}\`}` on `SortableItemHandle` |
-| 3 | 🔵 | `apps/studio/.storybook/preview.tsx:78` | a11y addon in `test: "todo"`: axe violations never fail the 191 Storybook tests | switch to `"error"` |
+| 1 | 🟡 | `apps/studio/components/layout/app-sidebar.tsx:17-22` | 2.4.4 / 4.1.2: in the collapsed rail the "Form Lens" text gets `hidden` (display none) and the icon is `aria-hidden`, so the logo link has no accessible name (axe `link-name`, serious) | `aria-label="Form Lens"` on the link, or `sr-only` instead of `hidden` |
+| 2 | 🟡 | `apps/studio/features/templates/components/field-row.tsx:79-84` (DS `SortableItem`) | 4.1.2: `div role="button"` wraps the handle, switch, inputs and buttons (axe `nested-interactive`, serious) | DS change (design-system report proposal); Studio cannot fix without forking the component |
+| 3 | 🔵 | `apps/studio/.storybook/preview.tsx:78` | axe violations never fail the 208 Storybook tests | `test: "error"` |
 
-No critical violation. Labels on all field inputs, `role="search"`, `nav aria-label="Pages"`, `role="status"` on API
-status, `aria-expanded` on the sidebar toggle: present. Not checked: live axe run, screen reader, contrast.
-
-### Owner's visual findings
-
-- Vertical `Separator` between the sidebar toggle and breadcrumbs is ~20 px (`data-[orientation=vertical]:h-5`,
-  `components/layout/app-header.tsx:13`).
-- List skeleton appears on clicking "New form" (`app/(shell)/forms/loading.tsx` scope).
+No critical violation. Present: nav labels as tooltips and accessible names in the rail, API status label `sr-only`
+when collapsed (`api-status-live.tsx:110`), drag handle named (`field-row.tsx:89`), `aria-current` on nav links.
+Not checked: live axe run, screen reader, contrast.
 
 ## Accepted
 
-<!-- none yet -->
+- AC2 — the design system's `SidebarTrigger` sets no `aria-expanded` (`apps/studio/components/layout/app-header.tsx:11`).
+  Reason: owner's explicit decision to use the plain DS trigger until the DS fixes it; see
+  `specs/studio-app-shell/design-system-report.md:11-22`. Accepted 2026-11-24.
 
 ## Verdict
 
-NOT READY ❌
-
-Must fix (not acceptable):
-1. AC14/AC15 (QA F1): show field errors on a refused submit for duplicate key, choice without allowed values, key
-   format and min > max; announce them — `/sdd:implement T5`.
-2. QA F2: clear the API 422 banner on a later client-side refusal on the edit page — `/sdd:implement T5`.
-3. QA F3: stable ids for `SortableItem` (`field-row.tsx:81`, `template-editor.tsx:198`) to remove the hydration
-   mismatch — `/sdd:implement T5`.
-4. QA F5 + owner: move `app/(shell)/forms/loading.tsx` so it covers the list only (e.g. a route group for the list);
-   not-found returns 404, no list skeleton on `/forms/new` — `/sdd:implement T4`.
-5. Owner / §7: translate the 7 messages in `map-service-error.ts:25-33` to English and update its tests —
-   `/sdd:implement T5`.
-6. Owner / AC22: Unicode case folding for `search` (`templates/repository.py:128-133`) with non-ASCII, empty and
-   whitespace tests — `/sdd:implement T1`.
-7. Owner / §1: replace `vi.mock` / `fetch` HTTP stubs with MSW handlers and mimicry-js builders in the Studio tests —
-   `/sdd:implement T3`, `T4`, `T5` (their test files).
-8. Owner: toast cookies instead of `?created=1` / `?saved=1` / `?deleted=1` (`template-actions.ts:81,116`,
-   `action-toast.tsx`) — `/sdd:implement T5`.
-9. Owner: full-height header separator (`app-header.tsx:13`) — `/sdd:implement T3`.
+NOT READY ❌ — no failing test, no unmet AC, no failed extra check, no critical violation; every blocker below is
+acceptable.
 
 Fix or accept:
-10. nextjs-rules in `load-templates.ts`, `lib/api-health.ts`, `formlens-status/route.ts`: `server-only`,
-    `createLogger({ module })`, `statusCode`, fixed message instead of API `title`.
-11. Add an AC5 test (theme persists across reload) and a page-level phone-width check (AC24).
-12. Raise Studio unit coverage from 52.7 % to > 70 %.
-13. Name the drag handle (`field-row.tsx:87`).
-14. spec-verifier out-of-scope items (`specs/capabilities.yml`, `E2E_PORT`, `@source`, `test_lifespan.py`, extra
-    toasts).
+1. python-reviewer 🟡 / AC22 edge: reject NUL in `search` (422 via `Query(pattern=...)` in `templates/router.py:76`)
+   or return an empty page, with an API test for `search=%00` and `search=a%00zzz`; regenerate `openapi.json` and the
+   api-client if the contract changes — `/sdd:implement T1`.
+2. Accessibility 🟡 #1: accessible name for the logo link in the collapsed rail (`app-sidebar.tsx:17`) —
+   `/sdd:implement T3`.
+3. Accessibility 🟡 #2: nested-interactive `SortableItem` — accept and add to `design-system-report.md`, or fix in
+   the DS.
+4. Out of scope: accept or revert `specs/capabilities.yml`, `E2E_PORT` in `playwright.config.ts`, the "Form saved" /
+   "Form deleted" toasts, `debug` level in `proxy.ts:19`.
+
+Warnings (no action required for READY): python 🔵 ×3; nextjs 🔵 ×5; QA lows (`?page=99` "Page 99 of 2", rail status
+dot without tooltip, dev-only console warning); oasdiff/Spectral not run locally (CI gates them); `plan.md` drift and
+files outside task globs; missing whitespace-only search test; remaining non-HTTP `vi.mock` stubs.

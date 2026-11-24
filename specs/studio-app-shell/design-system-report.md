@@ -45,3 +45,17 @@ the row by default (`self-stretch`, `h-auto`), or document it. Not verified agai
 
 The Studio's Storybook runs the a11y addon with `test: "todo"`, so axe violations never fail a test; the missing
 `aria-expanded` above would be caught by a DS-level story that asserts it on the trigger.
+
+## 5. `SortableItem` is a `role="button"` that wraps interactive controls (WCAG 4.1.2, axe `nested-interactive`)
+
+Found by the SDD review (static accessibility audit and the Playwright run). The sortable item root renders
+`div role="button" tabindex="0" aria-describedby=…` and the consumer puts inputs and buttons inside it (the Studio's
+field rows: key, description, type, required, move up, move down, remove). Interactive controls inside a
+`role="button"` are not reachable as separate controls for assistive technology, and the row's accessible name becomes
+its whole content (a Playwright `getByRole("button", { name: "Move field 1 down" })` matched both the root and the
+inner button).
+
+**Change.** Keep the drag listeners and `tabIndex` on a dedicated drag-handle element (a real `button` with
+`aria-label`, as the Studio already adds) and render the item root as a plain element (`div`, `li`) without `role` or
+`tabindex`, or let the consumer choose the handle with an `asHandle` or `Sortable.Handle` part. The keyboard drag
+sensor then attaches to the handle only.

@@ -8,6 +8,7 @@
 ### T1: Template search and last-used date in the API
 project: api
 status: in-progress
+branch: feature/studio-app-shell--SAS-d014-T1
 depends_on: []
 acceptance: AC22, AC23
 plan: High-level approach (API first); Contracts (HTTP, Port, Migration); File-by-file change list › api
@@ -24,6 +25,10 @@ review fixes (SDD review, NOT READY):
 - tests: non-ASCII, empty `?search=` and whitespace-only search in `tests/templates/test_api.py` and `test_repository.py`
 - `mark_used` is best-effort: when it raises after `repository.add` has committed, `submit` logs it once with `log.exception` and still returns 202; test it with a `FakeTemplateCatalog` that raises
 - confirm `make api-check` (oasdiff) exit code and report it
+review fixes, round 2 (SDD review, NOT READY; every blocker acceptable, owner chose to fix):
+- a NUL character in `search` must not break AC22: SQLite LIKE reads the pattern as a C string, so `search=%00` returned every template and `search=a%00zzz` returned one whose name has no NUL; reject NUL with a 422 Problem Details (`Query(pattern=...)` at `templates/router.py`) or return an empty page; add a test; regenerate `openapi.json` and the api-client
+- tests: a final-sigma case that tells `casefold` from `lower()` (name "κοσμοσ" with σ at the end against search "ΚΟΣΜΟΣ" and "κοσμος"); a whitespace-only search test
+- document the Unicode limits (ß matches "ss", İ does not match i, composed accent versus combining mark) in one sentence of the `search` description and the README
 notes: do not edit `v0001_initial.py` (`api-v0.1.0` is released); templates must not import extractions (import-linter); Problem Details and `operation_id` rules apply; `make check` and `make api-check` (oasdiff: additive only) must pass
 
 ### T2: Regenerate the API client
@@ -40,7 +45,8 @@ notes: never edit `src/generated` by hand; `generate:check` must pass
 
 ### T3: App shell, navigation and live API status
 project: @form-lens/studio
-status: review
+status: in-progress
+branch: feature/studio-app-shell--SAS-d014-T3
 depends_on: []
 acceptance: AC1, AC2, AC3, AC4, AC5, AC24, AC25
 plan: High-level approach (Studio, shell and status polling); File-by-file change list › @form-lens/studio (globals, layouts, `components/layout/*`, `lib/api-health.ts`, `app/api/formlens-status`, placeholders)
@@ -53,6 +59,8 @@ scope:
 - quiet request logging for `/api/formlens-status` in `proxy.ts` if every poll logs a line
 - tests: `api-health` unit tests (ok, error status, network failure, timeout), route test, stories with play tests for the sidebar (active item, toggle) and status (both states, flips after one interval, no request while hidden)
 files: apps/studio/app/globals.css, apps/studio/app/layout.tsx, apps/studio/app/page.tsx, apps/studio/app/(shell)/layout.tsx, apps/studio/app/(shell)/forms/page.tsx, apps/studio/app/(shell)/documents/**, apps/studio/app/(shell)/jobs/**, apps/studio/app/api/formlens-status/**, apps/studio/components/layout/**, apps/studio/lib/api-health*.ts, apps/studio/proxy.ts, apps/studio/tests/unit/proxy.test.ts
+review fixes, round 2 (SDD review, NOT READY; owner chose to fix):
+- the collapsed icon rail: the logo link needs an accessible name when its text is hidden (e.g. `aria-label="Form Lens"` on the link, WCAG 2.4.4/4.1.2); add tooltips to the logo and the status dot if the design system allows; add a story asserting the link's accessible name when collapsed
 notes: the API client is server-only (`lib/formlens-api.ts`); Studio code rules (`function` keyword, ternary not `&&`, no `useMemo`/`useCallback`, `Array<T>`); match the design's shell (plan › Reference sources)
 
 ### T4: Forms list with search, paging and last-used date
@@ -73,7 +81,7 @@ notes: depends on T3 because it replaces T3's minimal `/forms` page
 
 ### T5: Create, edit and delete a template
 project: @form-lens/studio
-status: in-progress
+status: review
 depends_on: [T2, T3]
 acceptance: AC12, AC13, AC14, AC15, AC16, AC17, AC18, AC19, AC20, AC21, AC24
 plan: High-level approach (react-hook-form + Zod, Server Actions); Contracts (Studio Zod schema); File-by-file change list › @form-lens/studio (`schemas/`, `utils/template-mapping`, `server/load-template`, `server/template-actions`, `server/map-service-error`, editor components, `forms/new`, `forms/[id]/edit`, `not-found`)

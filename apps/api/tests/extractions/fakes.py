@@ -1,6 +1,7 @@
 """In-memory stand-ins for the extraction ports, and a clock a test moves by hand."""
 
 import threading
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -99,6 +100,16 @@ class FakeExtractionRepository:
             self.inputs.pop(finished.id, None)
             return True
 
+    def cancel_if_unfinished(self, extraction_id: UUID, now: datetime) -> Extraction | None:
+        with self._lock:
+            current = self.rows.get(extraction_id)
+            if current is None or current.status not in {ExtractionStatus.PENDING, ExtractionStatus.RUNNING}:
+                return None
+            cancelled = current.cancel(now)
+            self.rows[extraction_id] = cancelled
+            self.inputs.pop(extraction_id, None)
+            return cancelled
+
     def release_if_running(self, released: Extraction, *, claimed_attempts: int) -> bool:
         with self._lock:
             current = self.rows.get(released.id)
@@ -182,8 +193,10 @@ class FakeExtractor:
         *,
         errors: list[Exception] | None = None,
         release: threading.Event | None = None,
+        on_call: Callable[[], object] | None = None,
     ) -> None:
         self.values = values or {}
+        self.on_call = on_call  # runs first in every call: what happens elsewhere while the model reads
         self.errors = list(errors or [])
         self.release = release
         self.calls: list[tuple[int, UUID]] = []  # the length of the text and the template, never the text
@@ -193,6 +206,8 @@ class FakeExtractor:
     def extract(self, text: str, template: TemplateSnapshot) -> dict[str, Any]:
         self.calls.append((len(text), template.template_id))
         self.started.set()
+        if self.on_call is not None:
+            self.on_call()
         try:
             if self.release is not None:
                 assert self.release.wait(10), "the test never released the extractor"

@@ -48,9 +48,11 @@ def make_template(client: TestClient, **overrides: Any) -> dict[str, Any]:
     return created
 
 
-def submit(client: TestClient, template_id: str, content: bytes = PDF, **kwargs: Any) -> Any:
+def submit(
+    client: TestClient, template_id: str, content: bytes = PDF, *, filename: str = "form.pdf", **kwargs: Any
+) -> Any:
     return client.post(
-        URL, data={"template_id": template_id}, files={"file": ("form.pdf", content, "application/pdf")}, **kwargs
+        URL, data={"template_id": template_id}, files={"file": (filename, content, "application/pdf")}, **kwargs
     )
 
 
@@ -513,6 +515,9 @@ def test_the_response_has_no_field_for_the_document_or_the_prompt(client: TestCl
         "created_at",
         "started_at",
         "finished_at",
+        "template_name",
+        "fields",
+        "filename",
     }
 
 
@@ -1171,3 +1176,202 @@ def test_a_failed_item_in_the_list_is_the_same_as_the_failed_extraction_read_by_
 
     assert (by_id["status"], by_id["error"]["reason"]) == ("failed", "invalid_file")
     assert listed == [by_id]
+
+
+# --- cancel ----------------------------------------------------------------------------------------
+
+
+def cancel(client: TestClient, extraction_id: str) -> Any:
+    return client.post(f"{URL}/{extraction_id}/cancel")
+
+
+def test_cancelling_a_pending_extraction_reports_it_cancelled_and_the_worker_never_reads_it(
+    app: FastAPI, client: TestClient, extractor: FakeExtractor
+) -> None:
+    """AC32."""
+    created = submit(client, make_template(client)["id"]).json()
+
+    response = cancel(client, created["id"])
+
+    body = response.json()
+    assert response.status_code == 200
+    assert (body["id"], body["status"], body["result"], body["error"]) == (created["id"], "cancelled", None, None)
+    assert body["finished_at"] is not None
+    assert processor(app).run_once() is False
+    assert extractor.calls == []
+    assert client.get(f"{URL}/{created['id']}").json() == body
+
+
+@pytest.mark.parametrize("end", ["completed", "failed", "cancelled"])
+def test_cancelling_an_extraction_that_ended_is_a_409_and_changes_nothing(
+    app: FastAPI, client: TestClient, end: str
+) -> None:
+    """AC33."""
+    put(app, 1, status=ExtractionStatus(end), finished_at=datetime.now(UTC))
+    before = client.get(f"{URL}/{UUID(int=1)}").json()
+
+    response = cancel(client, str(UUID(int=1)))
+
+    assert response.status_code == 409
+    assert response.headers["content-type"] == PROBLEM_MEDIA_TYPE
+    assert response.json()["type"] == problem_type("extraction-not-cancellable")
+    assert f"is {end}" in response.json()["detail"]
+    assert client.get(f"{URL}/{UUID(int=1)}").json() == before
+
+
+def test_cancelling_a_completed_extraction_keeps_its_result(app: FastAPI, client: TestClient) -> None:
+    """AC33 through the worker: the finished job keeps the result it had."""
+    location = submit(client, make_template(client)["id"]).headers["Location"]
+    processor(app).run_once()
+    completed = client.get(location).json()
+
+    assert cancel(client, completed["id"]).status_code == 409
+
+    assert client.get(location).json() == completed
+    assert completed["result"] == {"number": "INV-42", "buyer": "ACME"}
+
+
+def test_cancelling_an_unknown_extraction_is_a_404_extraction_not_found(client: TestClient) -> None:
+    """AC34."""
+    response = cancel(client, str(uuid4()))
+
+    assert response.status_code == 404
+    assert response.json()["type"] == problem_type("extraction-not-found")
+
+
+def test_cancelling_an_id_that_is_not_a_uuid_is_a_422(client: TestClient) -> None:
+    response = cancel(client, "not-a-uuid")
+
+    assert (response.status_code, response.json()["type"]) == (422, problem_type("validation-error"))
+
+
+def test_a_running_extraction_cancelled_before_the_model_answers_stays_cancelled_without_a_result(
+    db_url: str,
+) -> None:
+    """AC36: the worker is not stopped, but what it finishes with is dropped."""
+    release = threading.Event()
+    extractor = FakeExtractor({"number": "INV-42"}, release=release)
+    app = create_app(
+        make_settings(db_url=db_url),
+        parser_factory=lambda _: FakeParser(),
+        extractor_factory=lambda _: extractor,
+        start_worker=False,
+    )
+    try:
+        with TestClient(app) as client:
+            location = submit(client, make_template(client)["id"]).headers["Location"]
+            with ThreadPoolExecutor(1) as pool:
+                worker = pool.submit(processor(app).run_once)
+                assert extractor.started.wait(5)
+                running = client.get(location).json()
+                cancelled = cancel(client, running["id"])
+                release.set()
+                assert worker.result(timeout=10) is True
+            after = client.get(location).json()
+    finally:
+        release.set()
+        app.state.database.dispose()
+
+    assert running["status"] == "running"
+    assert (cancelled.status_code, cancelled.json()["status"]) == (200, "cancelled")
+    assert (after["status"], after["result"], after["error"]) == ("cancelled", None, None)
+    assert after == cancelled.json()
+
+
+def test_the_cancelled_filter_lists_a_cancelled_extraction_and_counts_it(app: FastAPI, client: TestClient) -> None:
+    """AC37."""
+    template = make_template(client)
+    kept = submit(client, template["id"]).json()
+    cancelled = submit(client, template["id"]).json()
+    cancel(client, cancelled["id"])
+
+    response = client.get(URL, params={"status": "cancelled"})
+
+    assert ids_of(response) == [cancelled["id"]]
+    assert response.json()["total"] == 1
+    assert kept["id"] not in ids_of(response)
+
+
+def test_the_cancel_route_is_in_the_spec_with_its_statuses(client: TestClient) -> None:
+    spec = client.app.openapi()  # type: ignore[attr-defined]  # the app of the client
+
+    operation = spec["paths"]["/v1/extractions/{extraction_id}/cancel"]["post"]
+
+    assert operation["operationId"] == "cancel_extraction"
+    assert sorted(operation["responses"]) == ["200", "404", "409", "422"]
+    assert operation["tags"] == ["extractions"]
+    assert "cancelled" in spec["components"]["schemas"]["ExtractionStatus"]["enum"]
+
+
+# --- the file name and the copy of the template ----------------------------------------------------
+
+
+def test_the_file_name_is_returned_when_created_when_read_and_when_listed(client: TestClient) -> None:
+    """AC38."""
+    created = submit(client, make_template(client)["id"], filename="invoice_118_2026.pdf").json()
+
+    read = client.get(f"{URL}/{created['id']}").json()
+    [listed] = client.get(URL).json()["items"]
+
+    assert created["filename"] == read["filename"] == listed["filename"] == "invoice_118_2026.pdf"
+
+
+@pytest.mark.parametrize(
+    ("sent", "kept"),
+    [
+        # python-multipart already strips a drive-letter path (`C:\\fakepath\\x.pdf`); these reach the service whole.
+        pytest.param("dir\\sub\\invoice.pdf", "invoice.pdf", id="backslash-path"),
+        pytest.param("scans/2026/invoice.pdf", "invoice.pdf", id="slash-path"),
+        pytest.param("../../invoice.pdf", "invoice.pdf", id="parent-path"),
+        pytest.param("dir/", None, id="no-name-left"),
+    ],
+)
+def test_only_the_last_part_of_a_path_in_the_file_name_is_kept(client: TestClient, sent: str, kept: str | None) -> None:
+    created = submit(client, make_template(client)["id"], filename=sent).json()
+
+    assert created["filename"] == kept
+    assert client.get(f"{URL}/{created['id']}").json()["filename"] == kept
+
+
+def test_a_file_name_longer_than_255_characters_is_cut_to_255(client: TestClient) -> None:
+    name = "n" * 296 + ".pdf"
+
+    created = submit(client, make_template(client)["id"], filename=name).json()
+
+    assert created["filename"] == name[:255]
+    assert client.get(f"{URL}/{created['id']}").json()["filename"] == name[:255]
+
+
+def test_an_extraction_stored_without_a_file_name_returns_null(app: FastAPI, client: TestClient) -> None:
+    put(app, 1)
+
+    assert client.get(f"{URL}/{UUID(int=1)}").json()["filename"] is None
+
+
+def test_the_template_name_and_fields_are_the_ones_submitted_even_after_the_template_is_edited(
+    client: TestClient,
+) -> None:
+    template = make_template(client)
+    created = submit(client, template["id"]).json()
+    client.put(
+        f"/v1/templates/{template['id']}",
+        json=template_body(name="Invoice 2", fields=[field_body(name="other", type="number", required=True)]),
+    )
+
+    read = client.get(f"{URL}/{created['id']}").json()
+
+    assert read["template_name"] == created["template_name"] == "Invoice"
+    assert read["fields"] == [
+        {"name": "number", "type": "text", "required": True},
+        {"name": "buyer", "type": "text", "required": False},
+    ]
+
+
+def test_the_template_name_and_fields_survive_a_delete_of_the_template(client: TestClient) -> None:
+    template = make_template(client)
+    created = submit(client, template["id"]).json()
+    assert client.delete(f"/v1/templates/{template['id']}").status_code == 204
+
+    read = client.get(f"{URL}/{created['id']}").json()
+
+    assert (read["template_name"], [item["name"] for item in read["fields"]]) == ("Invoice", ["number", "buyer"])

@@ -60,6 +60,14 @@ class ExtractionRepository(Protocol):
         """
         ...
 
+    def cancel_if_unfinished(self, extraction_id: UUID, now: datetime) -> Extraction | None:
+        """Cancel an extraction that is pending or running, end it at `now` and delete its upload.
+
+        Returns the cancelled extraction, or None, changing nothing, when there is no such extraction or it
+        already ended. A worker that finishes the job later finds it no longer running, so its result is dropped.
+        """
+        ...
+
     def release_if_running(self, released: Extraction, *, claimed_attempts: int) -> bool:
         """Put a running extraction back to pending, only if it is still running with `claimed_attempts`.
 

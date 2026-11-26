@@ -1,5 +1,6 @@
 """One suite, every repository: the fake and the SQLite adapter must behave the same wherever a test relies on it."""
 
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from uuid import UUID
 
@@ -514,3 +515,142 @@ def test_an_expired_extraction_is_not_counted_with_the_filters(repository: Extra
     ids, total = page_ids(repository, statuses=frozenset({ExtractionStatus.COMPLETED}), finished_after=cutoff)
 
     assert (ids, total) == ([id_of(2)], 1)
+
+
+# --- the file name ---------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("filename", ["invoice_118_2026.pdf", "ż" * 255, None], ids=["plain", "255-non-ascii", "none"])
+def test_the_file_name_is_stored_and_read_back(repository: ExtractionRepository, filename: str | None) -> None:
+    add(repository, ExtractionFactory.build(id=id_of(1), filename=filename))
+
+    found = repository.get(id_of(1))
+
+    assert found is not None
+    assert found.filename == filename
+
+
+# --- cancel ----------------------------------------------------------------------------------------
+
+CANCELLED_AT = NOW + timedelta(minutes=5)
+
+
+def test_cancelling_a_waiting_extraction_ends_it_and_deletes_its_upload(repository: ExtractionRepository) -> None:
+    waiting = add(repository, ExtractionFactory.build(id=id_of(1), filename="a.pdf"))
+
+    cancelled = repository.cancel_if_unfinished(id_of(1), CANCELLED_AT)
+
+    assert cancelled == waiting.cancel(CANCELLED_AT)
+    assert repository.get(id_of(1)) == cancelled
+    assert repository.read_input(id_of(1)) is None
+
+
+def test_a_cancelled_waiting_extraction_is_never_claimed(repository: ExtractionRepository) -> None:
+    add(repository, ExtractionFactory.build(id=id_of(1)))
+    repository.cancel_if_unfinished(id_of(1), CANCELLED_AT)
+
+    assert repository.claim_next(CANCELLED_AT) is None
+    assert repository.count_pending() == 0
+
+
+def test_cancelling_a_running_extraction_ends_it_and_keeps_its_attempt(repository: ExtractionRepository) -> None:
+    taken = claimed(repository, ExtractionFactory.build(id=id_of(1)))
+
+    cancelled = repository.cancel_if_unfinished(id_of(1), CANCELLED_AT)
+
+    assert cancelled == taken.cancel(CANCELLED_AT)
+    assert cancelled is not None
+    assert (cancelled.attempts, cancelled.started_at) == (1, taken.started_at)
+    assert repository.read_input(id_of(1)) is None
+
+
+LATE_ENDS: dict[str, Callable[[Extraction], Extraction]] = {
+    "completed": lambda taken: taken.complete({"number": "42", "buyer": None}, CANCELLED_AT + timedelta(seconds=1)),
+    "failed": lambda taken: taken.fail(FailureReason.TIMED_OUT, CANCELLED_AT + timedelta(seconds=1)),
+}
+
+
+@pytest.mark.parametrize("outcome", list(LATE_ENDS))
+def test_a_worker_that_finishes_after_the_cancel_changes_nothing(
+    repository: ExtractionRepository, outcome: str
+) -> None:
+    """AC36 in storage: the terminal write needs `running`, and a cancelled job is not."""
+    taken = claimed(repository, ExtractionFactory.build(id=id_of(1)))
+    cancelled = repository.cancel_if_unfinished(id_of(1), CANCELLED_AT)
+
+    assert repository.finish_if_running(LATE_ENDS[outcome](taken)) is False
+    assert repository.get(id_of(1)) == cancelled
+
+
+@pytest.mark.parametrize("move", ["retry", "requeue_busy"])
+def test_a_worker_that_releases_the_job_after_the_cancel_does_not_put_it_back_in_the_queue(
+    repository: ExtractionRepository, move: str
+) -> None:
+    taken = claimed(repository, ExtractionFactory.build(id=id_of(1)))
+    cancelled = repository.cancel_if_unfinished(id_of(1), CANCELLED_AT)
+    released = getattr(taken, move)()
+
+    assert repository.release_if_running(released, claimed_attempts=taken.attempts) is False
+    assert repository.get(id_of(1)) == cancelled
+    assert repository.count_pending() == 0
+
+
+def end_by_finishing(repository: ExtractionRepository, taken: Extraction, end: ExtractionStatus) -> Extraction | None:
+    ended = taken.complete({}, NOW) if end is ExtractionStatus.COMPLETED else taken.fail(FailureReason.TIMED_OUT, NOW)
+    repository.finish_if_running(ended)
+    return ended
+
+
+ENDINGS: dict[str, Callable[[ExtractionRepository, Extraction], Extraction | None]] = {
+    "completed": lambda repository, taken: end_by_finishing(repository, taken, ExtractionStatus.COMPLETED),
+    "failed": lambda repository, taken: end_by_finishing(repository, taken, ExtractionStatus.FAILED),
+    "cancelled": lambda repository, taken: repository.cancel_if_unfinished(taken.id, NOW + timedelta(seconds=2)),
+}
+
+
+@pytest.mark.parametrize("end", list(ENDINGS))
+def test_an_extraction_that_ended_is_not_cancelled_and_stays_as_it_was(
+    repository: ExtractionRepository, end: str
+) -> None:
+    taken = claimed(repository, ExtractionFactory.build(id=id_of(1)))
+    ended = ENDINGS[end](repository, taken)
+
+    assert repository.cancel_if_unfinished(id_of(1), CANCELLED_AT) is None
+    assert repository.get(id_of(1)) == ended
+
+
+def test_cancelling_an_unknown_extraction_is_none(repository: ExtractionRepository) -> None:
+    assert repository.cancel_if_unfinished(id_of(9), CANCELLED_AT) is None
+
+
+def test_recovery_leaves_a_cancelled_extraction_alone(repository: ExtractionRepository) -> None:
+    claimed(repository, ExtractionFactory.build(id=id_of(1)))
+    cancelled = repository.cancel_if_unfinished(id_of(1), CANCELLED_AT)
+
+    counts = repository.recover_running(2, CANCELLED_AT)
+
+    assert (counts.requeued, counts.failed) == (0, 0)
+    assert repository.get(id_of(1)) == cancelled
+
+
+def test_purge_deletes_a_cancelled_extraction_by_the_time_it_was_cancelled(repository: ExtractionRepository) -> None:
+    add(repository, ExtractionFactory.build(id=id_of(1), created_at=NOW))
+    add(repository, ExtractionFactory.build(id=id_of(2), created_at=NOW + timedelta(seconds=1)))
+    repository.cancel_if_unfinished(id_of(1), NOW + timedelta(hours=1))
+    kept = repository.cancel_if_unfinished(id_of(2), NOW + timedelta(hours=30))
+
+    purged = repository.purge_before(NOW + timedelta(hours=25))
+
+    assert purged == 1
+    assert repository.get(id_of(1)) is None
+    assert repository.get(id_of(2)) == kept
+
+
+def test_the_cancelled_status_filters_a_page_and_its_total(repository: ExtractionRepository) -> None:
+    stored(repository, 1, created_at=NOW)
+    stored(repository, 2, created_at=NOW + timedelta(seconds=1))
+    stored(repository, 3, created_at=NOW + timedelta(seconds=2))
+    repository.cancel_if_unfinished(id_of(1), NOW)
+    repository.cancel_if_unfinished(id_of(3), NOW)
+
+    assert page_ids(repository, statuses=frozenset({ExtractionStatus.CANCELLED})) == ([id_of(3), id_of(1)], 2)

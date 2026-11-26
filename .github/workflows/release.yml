@@ -46,7 +46,7 @@ jobs:
       - name: Create the App token 🔑
         if: steps.app.outputs.configured == 'true'
         id: token
-        uses: actions/create-github-app-token@v3.3.0
+        uses: actions/create-github-app-token@v3.4.0
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -71,7 +71,7 @@ jobs:
           token: ${{ steps.token.outputs.token }}
       - name: Set up uv 🐍
         if: steps.app.outputs.configured == 'true' && steps.release.outputs.prs_created == 'true'
-        uses: astral-sh/setup-uv@v10.3.3
+        uses: astral-sh/setup-uv@v10.4.0
         with:
           version: ${{ env.UV_VERSION }}
           working-directory: apps/api

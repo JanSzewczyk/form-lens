@@ -88,7 +88,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up uv 🐍
-        uses: astral-sh/setup-uv@v10.3.3
+        uses: astral-sh/setup-uv@v10.4.0
         with:
           version: ${{ env.UV_VERSION }}
           working-directory: apps/api
@@ -111,7 +111,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up uv 🐍
-        uses: astral-sh/setup-uv@v10.3.3
+        uses: astral-sh/setup-uv@v10.4.0
         with:
           version: ${{ env.UV_VERSION }}
           working-directory: apps/api
@@ -142,7 +142,7 @@ jobs:
           fetch-depth: 0 # api-breaking reads origin/main:openapi.json
           persist-credentials: false
       - name: Set up uv 🐍
-        uses: astral-sh/setup-uv@v10.3.3
+        uses: astral-sh/setup-uv@v10.4.0
         with:
           version: ${{ env.UV_VERSION }}
           working-directory: apps/api
@@ -299,7 +299,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up uv 🐍
-        uses: astral-sh/setup-uv@v10.3.3
+        uses: astral-sh/setup-uv@v10.4.0
         with:
           version: ${{ env.UV_VERSION }}
           working-directory: apps/api

@@ -60,7 +60,7 @@ export function UploadForm({ maxMb, onSubmitAction }: UploadFormProps) {
   }
 
   const fileMessage =
-    rejection ?? (failure?.kind === SubmitFailureKind.file && !isRefusalOutdated ? failure.error : null);
+    rejection ?? (failure?.kind === SubmitFailureKind.file && !isRefusalOutdated && !isPending ? failure.error : null);
 
   return (
     <form action={submit} className="flex min-w-0 flex-col gap-5">

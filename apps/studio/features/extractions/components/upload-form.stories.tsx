@@ -228,3 +228,97 @@ PhoneWidth.test(
     await expect(phone.scrollWidth).toBeLessThanOrEqual(phone.clientWidth);
   }
 );
+
+FileRefusedByApi.test(
+  "Clears the API's refusal when another file is chosen (AC15, known issue)",
+  async ({ canvas, canvasElement, userEvent }) => {
+    await userEvent.upload(fileInput(canvasElement), pdf("scan.pdf"));
+    await userEvent.click(await canvas.findByRole("button", { name: "Start analysis" }));
+    await expect(await canvas.findByRole("alert")).toHaveTextContent("The file is empty.");
+
+    await userEvent.upload(fileInput(canvasElement), pdf("other.pdf"));
+
+    await expect(await canvas.findByText("other.pdf")).toBeVisible();
+    await expect(canvas.queryByRole("alert")).not.toBeInTheDocument();
+  }
+);
+
+FileRefusedByApi.test(
+  "Clears the API's refusal when the file is removed (AC15, known issue)",
+  async ({ canvas, canvasElement, userEvent }) => {
+    await userEvent.upload(fileInput(canvasElement), pdf("scan.pdf"));
+    await userEvent.click(await canvas.findByRole("button", { name: "Start analysis" }));
+    await expect(await canvas.findByRole("alert")).toHaveTextContent("The file is empty.");
+
+    await userEvent.click(canvas.getByRole("button", { name: "Remove file" }));
+
+    await expect(canvas.queryByText("scan.pdf")).not.toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Start analysis" })).toBeDisabled();
+    await expect(canvas.queryByRole("alert")).not.toBeInTheDocument();
+  }
+);
+
+export const PendingSubmit = meta.story({
+  args: {
+    // The answer comes late, so the test sees the pending state; it does come, so no action stays pending after the test.
+    onSubmitAction: fn(
+      () =>
+        new Promise<SubmitFailure>((resolve) => {
+          setTimeout(() => resolve({ error: "The API is unavailable.", kind: "unavailable", success: false }), 500);
+        })
+    )
+  },
+  name: "Submit in progress"
+});
+
+PendingSubmit.test(
+  "Disables Start analysis while the file is being sent, so it is not sent twice (AC14)",
+  async ({ args, canvas, canvasElement, userEvent }) => {
+    await userEvent.upload(fileInput(canvasElement), pdf("scan.pdf"));
+    await userEvent.click(await canvas.findByRole("button", { name: "Start analysis" }));
+
+    // While loading, the button's name is "Loading Start analysis".
+    await waitFor(() => expect(canvas.getByRole("button", { name: /Start analysis/ })).toBeDisabled());
+    await expect(args.onSubmitAction).toHaveBeenCalledOnce();
+    await expect(await canvas.findByRole("alert")).toHaveTextContent("The API is unavailable.");
+  }
+);
+
+EmptyDropZone.test(
+  "Shows a file name with quotes, an ampersand and HTML as plain text",
+  async ({ canvas, canvasElement, userEvent }) => {
+    const name = `O'Brien "draft" & <b>bold</b>.pdf`;
+    await userEvent.upload(fileInput(canvasElement), pdf(name));
+
+    await expect(await canvas.findByText(name)).toBeVisible();
+    await expect(canvasElement.querySelector("b")).toBeNull();
+  }
+);
+
+EmptyDropZone.test(
+  "Keeps the chosen file when a refused file is dropped after it (AC11, AC13)",
+  async ({ canvas, canvasElement, userEvent }) => {
+    await userEvent.upload(fileInput(canvasElement), pdf("first.pdf"));
+    await expect(await canvas.findByText("first.pdf")).toBeVisible();
+
+    await userEvent.upload(fileInput(canvasElement), new File(["x"], "letter.docx", { type: "application/msword" }));
+
+    await expect(await canvas.findByRole("alert")).toHaveTextContent("PDF, PNG, JPEG or TIFF");
+    await expect(canvas.queryByText("letter.docx")).not.toBeInTheDocument();
+  }
+);
+
+export const RefusalWithMarkup = meta.story({
+  args: {
+    onSubmitAction: failingWith({ error: '<b>Bad</b> file & "type"', kind: "file", success: false })
+  },
+  name: "API refusal with markup in its message"
+});
+
+RefusalWithMarkup.test("Shows the API's message as plain text (AC15)", async ({ canvas, canvasElement, userEvent }) => {
+  await userEvent.upload(fileInput(canvasElement), pdf("scan.pdf"));
+  await userEvent.click(await canvas.findByRole("button", { name: "Start analysis" }));
+
+  await expect(await canvas.findByRole("alert")).toHaveTextContent('<b>Bad</b> file & "type"');
+  await expect(canvasElement.querySelector("b")).toBeNull();
+});

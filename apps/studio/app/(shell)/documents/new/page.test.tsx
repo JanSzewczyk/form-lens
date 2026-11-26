@@ -93,4 +93,64 @@ describe("New document page", () => {
 
     await expect(renderPage({ template: TEMPLATE_ID })).rejects.toThrow("Failed to load the form");
   });
+  it("lets the user page through every form, keeping the search (AC2, AC4)", async () => {
+    const forms = templateResponseBuilder.many(13);
+    const asked = servePagedForms(forms);
+
+    const first = await renderPage({ q: "invoice" });
+    const second = await renderPage({ page: "2", q: "invoice" });
+
+    expect(asked).toEqual([
+      { limit: "12", offset: "0", search: "invoice" },
+      { limit: "12", offset: "12", search: "invoice" }
+    ]);
+    expect(first).toContain('href="/documents/new?q=invoice&amp;page=2"');
+    expect(second).toContain('href="/documents/new?q=invoice"');
+    const listed = [...templateLinks(first), ...templateLinks(second)];
+    expect(listed).toEqual(forms.map((form) => form.id));
+  });
+
+  it.each([["abc"], ["0"], ["-3"]])("reads page %s as the first page", async (page) => {
+    const asked = servePagedForms(templateResponseBuilder.many(3));
+
+    await renderPage({ page });
+
+    expect(asked[0]?.offset).toBe("0");
+  });
+
+  it("does not show a page past the last one as an empty list (stricter reading of AC4)", async () => {
+    servePagedForms(templateResponseBuilder.many(13));
+
+    const html = await renderPage({ page: "99" });
+
+    expect(html).not.toContain("Page 99 of 2");
+  });
+
+  it("says the form was not found for a template id the API cannot read (AC8)", async () => {
+    server.use(http.get(apiUrl("/v1/templates/not-an-id"), () => problem(422)));
+
+    const html = await renderPage({ template: "not-an-id" });
+
+    expect(html).toContain("Form not found");
+    expect(html).not.toContain("Start analysis");
+  });
 });
+
+/** The API's list endpoint over `forms`, sliced by `offset` and `limit`; returns what each request asked for. */
+function servePagedForms(forms: Array<ReturnType<typeof templateResponseBuilder.one>>) {
+  const asked: Array<{ limit: string | null; offset: string | null; search: string | null }> = [];
+  server.use(
+    http.get(apiUrl("/v1/templates"), ({ request }) => {
+      const params = new URL(request.url).searchParams;
+      asked.push({ limit: params.get("limit"), offset: params.get("offset"), search: params.get("search") });
+      const offset = Number(params.get("offset") ?? 0);
+      const limit = Number(params.get("limit") ?? 12);
+      return HttpResponse.json({ items: forms.slice(offset, offset + limit), total: forms.length });
+    })
+  );
+  return asked;
+}
+
+function templateLinks(html: string): Array<string> {
+  return [...html.matchAll(/href="\/documents\/new\?template=([^"]+)"/g)].map((match) => match[1] ?? "");
+}

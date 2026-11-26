@@ -1,3 +1,4 @@
+import type * as React from "react";
 import { expect } from "storybook/test";
 import preview from "~/.storybook/preview";
 import { TemplatesStatus } from "~/features/templates/types/templates-result";
@@ -83,3 +84,78 @@ export const ApiDown = meta.story({ args: { result: { status: TemplatesStatus.un
 ApiDown.test("Says the forms could not be loaded", async ({ canvas }) => {
   await expect(canvas.getByRole("alert")).toHaveTextContent("The forms could not be loaded");
 });
+
+const third = templateResponseBuilder.one({ overrides: { name: "Delivery note" } });
+
+export const LastOfTwoPagesWithSearch = meta.story({
+  args: {
+    page: 2,
+    result: { pageSize: 2, status: TemplatesStatus.ok, templates: [third], total: 3 },
+    search: "invoice"
+  },
+  name: "Last of two pages, with a search"
+});
+
+LastOfTwoPagesWithSearch.test("Shows the rest of the forms with a way back and no Next (AC4)", async ({ canvas }) => {
+  await expect(canvas.getAllByRole("listitem")).toHaveLength(1);
+  await expect(canvas.getByText("Delivery note")).toBeVisible();
+  await expect(canvas.getByText("Page 2 of 2")).toBeVisible();
+  await expect(canvas.queryByRole("link", { name: "Next" })).not.toBeInTheDocument();
+  await expect(canvas.getByRole("link", { name: "Previous" })).toHaveAttribute("href", "/documents/new?q=invoice");
+});
+
+export const FirstOfTwoPagesWithSearch = meta.story({
+  args: {
+    result: { pageSize: 2, status: TemplatesStatus.ok, templates: [invoice, lease], total: 3 },
+    search: "invoice"
+  },
+  name: "First of two pages, with a search"
+});
+
+FirstOfTwoPagesWithSearch.test("Keeps the search on the next page (AC2, AC4)", async ({ canvas }) => {
+  await expect(canvas.getByRole("link", { name: "Next" })).toHaveAttribute("href", "/documents/new?q=invoice&page=2");
+  await expect(canvas.queryByRole("link", { name: "Previous" })).not.toBeInTheDocument();
+});
+
+const phoneWidth = {
+  decorators: [
+    (Story: () => React.ReactNode) => (
+      <div className="w-[320px]" data-testid="phone">
+        <Story />
+      </div>
+    )
+  ],
+  globals: { viewport: { isRotated: false, value: "mobile1" } }
+};
+
+export const PhoneWidth = meta.story({ ...phoneWidth, name: "Phone width" });
+
+PhoneWidth.test("Fits a 320 px screen without horizontal scroll (AC35)", async ({ canvas }) => {
+  const phone = canvas.getByTestId("phone");
+  await expect(phone.scrollWidth).toBeLessThanOrEqual(phone.clientWidth);
+});
+
+export const PhoneWidthLongName = meta.story({
+  ...phoneWidth,
+  args: {
+    result: {
+      pageSize: 12,
+      status: TemplatesStatus.ok,
+      templates: [
+        templateResponseBuilder.one({
+          overrides: { description: "Supplier invoices", name: "Supplier_invoice_with_a_very_long_name_and_no_spaces" }
+        })
+      ],
+      total: 1
+    }
+  },
+  name: "Phone width, long form name"
+});
+
+PhoneWidthLongName.test(
+  "Wraps a long form name without horizontal scroll on a 320 px screen (AC35)",
+  async ({ canvas }) => {
+    const phone = canvas.getByTestId("phone");
+    await expect(phone.scrollWidth).toBeLessThanOrEqual(phone.clientWidth);
+  }
+);

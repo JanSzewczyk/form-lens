@@ -54,6 +54,26 @@ describe("mapExtractionProblem", () => {
     });
   });
 
+  it.each([
+    ["a fraction", "1.5"],
+    ["digits with letters", "30abc"],
+    ["too large to be exact", "1234567890123456789012345"]
+  ])("asks to try again in a moment for a 503 whose Retry-After is %s", (_, value) => {
+    expect(mapExtractionProblem(503, {}, new Headers({ "Retry-After": value })).error).toBe(
+      "FormLens is busy reading other documents. Try again in a moment."
+    );
+  });
+
+  it("reads a Retry-After with spaces around the seconds (AC17)", () => {
+    expect(mapExtractionProblem(503, {}, new Headers({ "Retry-After": " 30 " })).error).toBe(
+      "FormLens is busy reading other documents. Try again in 30 s."
+    );
+  });
+
+  it("does not ask to try again in 0 s (stricter reading of AC17)", () => {
+    expect(mapExtractionProblem(503, {}, new Headers({ "Retry-After": "0" })).error).not.toContain("in 0 s");
+  });
+
   it("reads any other status as an unavailable API, without its text (AC18)", () => {
     expect(mapExtractionProblem(500, { detail: "Traceback: db locked" }, NO_HEADERS)).toEqual({
       error: "The API is unavailable. Your form and file were kept, try again in a moment.",

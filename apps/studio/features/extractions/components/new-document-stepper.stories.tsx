@@ -23,3 +23,26 @@ UploadStep.test("Marks Upload document current and Choose form completed (AC5)",
   const completed = canvasElement.querySelector('[data-state="completed"]');
   await expect(completed).toHaveTextContent("Choose form");
 });
+
+export const PhoneWidth = UploadStep.extend({
+  decorators: [
+    (Story) => (
+      <div className="w-[320px]" data-testid="phone">
+        <Story />
+      </div>
+    )
+  ],
+  globals: { viewport: { isRotated: false, value: "mobile1" } },
+  name: "Phone width"
+});
+
+PhoneWidth.test("Stacks the steps on a phone-width screen without horizontal scroll (AC35)", async ({ canvas }) => {
+  // The stacking is a viewport rule (below `sm`), so the check only means something on a phone-width viewport.
+  await expect(window.matchMedia("(min-width: 640px)").matches).toBe(false);
+
+  const phone = canvas.getByTestId("phone");
+  await expect(phone.scrollWidth).toBeLessThanOrEqual(phone.clientWidth);
+  const tops = canvas.getAllByRole("tab").map((step) => step.getBoundingClientRect().top);
+  await expect(tops[0]).toBeLessThan(tops[1] ?? 0);
+  await expect(tops[1]).toBeLessThan(tops[2] ?? 0);
+});

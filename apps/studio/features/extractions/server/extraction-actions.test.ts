@@ -84,6 +84,57 @@ describe("submitExtraction", () => {
     expect(next.redirect).not.toHaveBeenCalled();
   });
 
+  it("opens the status page when Location is an absolute URL (AC14)", async () => {
+    const extraction = extractionResponseBuilder.one({ overrides: { id: "7a0e5f8c-1d2b-4c3a-9e8f-0a1b2c3d4e5f" } });
+    apiAnswers(() =>
+      HttpResponse.json(extraction, {
+        headers: { Location: `http://api.internal:8000/v1/extractions/${extraction.id}` },
+        status: 202
+      })
+    );
+
+    await expect(submitExtraction(TEMPLATE_ID, null, formWith(pdf()))).rejects.toThrow(
+      `NEXT_REDIRECT:/jobs/${extraction.id}`
+    );
+  });
+
+  it("opens the status page when Location carries a query string (AC14)", async () => {
+    const extraction = extractionResponseBuilder.one({ overrides: { id: "7a0e5f8c-1d2b-4c3a-9e8f-0a1b2c3d4e5f" } });
+    apiAnswers(() =>
+      HttpResponse.json(extraction, {
+        headers: { Location: `/v1/extractions/${extraction.id}?include=result` },
+        status: 202
+      })
+    );
+
+    await expect(submitExtraction(TEMPLATE_ID, null, formWith(pdf()))).rejects.toThrow(
+      `NEXT_REDIRECT:/jobs/${extraction.id}`
+    );
+  });
+
+  it("does not redirect to a Location that names another resource", async () => {
+    apiAnswers(() =>
+      HttpResponse.json(extractionResponseBuilder.one(), {
+        headers: { Location: `/v1/templates/${TEMPLATE_ID}` },
+        status: 202
+      })
+    );
+
+    const result = await submitExtraction(TEMPLATE_ID, null, formWith(pdf()));
+
+    expect(result.kind).toBe("unavailable");
+    expect(next.redirect).not.toHaveBeenCalled();
+  });
+
+  it("does not pass a 500's internal detail to the user (AC18)", async () => {
+    apiAnswers(() => problem(500, { detail: "sqlite3.OperationalError: database is locked" }));
+
+    const result = await submitExtraction(TEMPLATE_ID, null, formWith(pdf()));
+
+    expect(result.kind).toBe("unavailable");
+    expect(result.error).not.toContain("sqlite3");
+  });
+
   it("shows the API's refusal of the file at the drop zone (AC15)", async () => {
     apiAnswers(() => problem(400, { detail: "The file is empty." }));
 

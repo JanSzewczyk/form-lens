@@ -305,6 +305,7 @@ EmptyDropZone.test(
 
     await expect(await canvas.findByRole("alert")).toHaveTextContent("PDF, PNG, JPEG or TIFF");
     await expect(canvas.queryByText("letter.docx")).not.toBeInTheDocument();
+    await expect(canvas.getByText("first.pdf")).toBeVisible();
   }
 );
 

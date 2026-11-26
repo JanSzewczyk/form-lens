@@ -23,7 +23,11 @@ function resolveUrl(path: string): string {
   if (!config) {
     throw new Error("The FormLens API client is not configured: call configureApiClient({ baseUrl }) first.");
   }
-  return new URL(path, config.baseUrl).toString();
+  // A path such as `//host` or `https://host` would replace the configured host: never send those.
+  if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\")) {
+    throw new Error("Refusing to send a request outside the configured FormLens API origin.");
+  }
+  return `${new URL(config.baseUrl).origin}${path}`;
 }
 
 async function readBody(response: Response): Promise<unknown> {

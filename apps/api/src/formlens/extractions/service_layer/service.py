@@ -44,7 +44,8 @@ class ExtractionService:
         """Queue `content` to be read against the template; the work happens later, in the worker.
 
         The upload is checked first, because that is cheap, and the template is copied at this moment: a later
-        edit or delete does not change this job.
+        edit or delete does not change this job. The "last used" date of the template is best effort: the job is
+        stored before it is written, so a failure there is logged and the job is still returned.
 
         Raises:
             UploadRefused: The file is empty, too large or not a supported document.
@@ -55,6 +56,7 @@ class ExtractionService:
         snapshot = self._catalog.snapshot(template_id)
         extraction = Extraction.new(uuid.uuid7(), snapshot, self._clock())
         self._repository.add(extraction, content, max_pending=self._max_pending)
+        self._mark_used(template_id, extraction)
         log.info(
             "extraction_enqueued",
             extraction_id=str(extraction.id),
@@ -63,6 +65,13 @@ class ExtractionService:
             file_size_bytes=len(content),
         )
         return extraction
+
+    def _mark_used(self, template_id: UUID, extraction: Extraction) -> None:
+        """Record the use of the template; the extraction is already stored, so an error here is only logged."""
+        try:
+            self._catalog.mark_used(template_id, extraction.created_at)
+        except Exception:
+            log.exception("template_mark_used_failed", extraction_id=str(extraction.id), template_id=str(template_id))
 
     def page(
         self, *, statuses: Collection[ExtractionStatus], template_id: UUID | None, limit: int, offset: int

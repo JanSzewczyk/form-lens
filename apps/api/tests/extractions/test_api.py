@@ -11,6 +11,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
+from structlog.testing import capture_logs
 
 from formlens.config import Settings
 from formlens.extractions.domain.exceptions import InvalidOutput, LlmUnavailable
@@ -91,6 +92,131 @@ def test_a_submitted_document_is_accepted_with_202_and_a_location_and_is_pending
     )
     assert (body["result"], body["error"], body["missing_required"]) == (None, None, [])
     assert client.get(response.headers["Location"]).json() == body
+
+
+def test_a_submission_sets_the_templates_last_used_date_to_the_extractions_creation_time(
+    client: TestClient,
+) -> None:
+    used = make_template(client)
+    unused = make_template(client)
+    assert used["last_used_at"] is None
+
+    first = submit(client, used["id"]).json()
+    after_first = client.get(f"/v1/templates/{used['id']}").json()["last_used_at"]
+    second = submit(client, used["id"]).json()
+
+    assert after_first == first["created_at"]
+    assert client.get(f"/v1/templates/{used['id']}").json()["last_used_at"] == second["created_at"]
+    assert client.get(f"/v1/templates/{unused['id']}").json()["last_used_at"] is None
+
+
+def test_the_last_used_date_is_a_utc_timestamp_written_like_the_other_dates_of_the_template(
+    client: TestClient,
+) -> None:
+    template = make_template(client)
+    submit(client, template["id"])
+
+    fetched = client.get(f"/v1/templates/{template['id']}").json()
+
+    last_used = datetime.fromisoformat(fetched["last_used_at"])
+    assert last_used.utcoffset() == timedelta(0)
+    assert fetched["last_used_at"][-1] == fetched["created_at"][-1] == "Z"
+    assert last_used >= datetime.fromisoformat(fetched["created_at"])
+
+
+def test_a_submission_marks_only_its_own_template(client: TestClient) -> None:
+    first = make_template(client)
+    second = make_template(client)
+    submit(client, first["id"])
+
+    listed = {item["id"]: item["last_used_at"] for item in client.get("/v1/templates").json()["items"]}
+
+    assert listed[first["id"]] is not None
+    assert listed[second["id"]] is None
+
+
+def test_a_refused_submission_leaves_the_templates_last_used_date_empty(client: TestClient) -> None:
+    template = make_template(client)
+
+    assert submit(client, template["id"], b"").status_code == 400
+
+    assert client.get(f"/v1/templates/{template['id']}").json()["last_used_at"] is None
+
+
+def test_a_submission_is_accepted_when_the_last_used_date_cannot_be_written(
+    app: FastAPI, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template = make_template(client)
+
+    def fail(*_: object) -> None:
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(app.state.template_repository, "mark_used", fail)
+
+    with capture_logs() as logs:
+        response = submit(client, template["id"])
+
+    body = response.json()
+    assert response.status_code == 202
+    assert client.get(response.headers["Location"]).json() == body
+    assert [entry["event"] for entry in logs if entry["log_level"] == "error"] == ["template_mark_used_failed"]
+    assert client.get(f"/v1/templates/{template['id']}").json()["last_used_at"] is None
+
+
+def test_a_template_deleted_while_it_is_marked_does_not_fail_the_submission(
+    app: FastAPI, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template = make_template(client)
+    repository = app.state.template_repository
+    mark_used = repository.mark_used
+
+    def delete_then_mark(template_id: UUID, at: datetime) -> None:
+        repository.delete(template_id)
+        mark_used(template_id, at)
+
+    monkeypatch.setattr(repository, "mark_used", delete_then_mark)
+
+    with capture_logs() as logs:
+        response = submit(client, template["id"])
+
+    assert response.status_code == 202
+    assert client.get(response.headers["Location"]).json() == response.json()
+    assert [entry for entry in logs if entry["log_level"] == "error"] == []
+    assert client.get(f"/v1/templates/{template['id']}").status_code == 404
+
+
+def test_a_database_that_refuses_the_last_used_date_still_accepts_this_and_the_next_submission(
+    app: FastAPI, client: TestClient
+) -> None:
+    template = make_template(client)
+    with app.state.database.engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TRIGGER refuse_mark BEFORE UPDATE OF last_used_at ON templates "
+            "BEGIN SELECT RAISE(ABORT, 'refused'); END"
+        )
+
+    with capture_logs() as logs:
+        first = submit(client, template["id"])
+        second = submit(client, template["id"])
+
+    assert (first.status_code, second.status_code) == (202, 202)
+    assert [entry["event"] for entry in logs if entry["log_level"] == "error"] == ["template_mark_used_failed"] * 2
+    assert client.get(f"/v1/templates/{template['id']}").json()["last_used_at"] is None
+    with app.state.database.engine.begin() as connection:
+        connection.exec_driver_sql("DROP TRIGGER refuse_mark")
+    third = submit(client, template["id"])
+    assert third.status_code == 202
+    assert client.get(f"/v1/templates/{template['id']}").json()["last_used_at"] == third.json()["created_at"]
+
+
+def test_the_last_used_date_is_listed_with_the_template_and_survives_a_replacement(client: TestClient) -> None:
+    template = make_template(client)
+    created_at = submit(client, template["id"]).json()["created_at"]
+
+    client.put(f"/v1/templates/{template['id']}", json=template_body(name="Renamed"))
+
+    listed = client.get("/v1/templates", params={"search": "renamed"}).json()
+    assert [(item["name"], item["last_used_at"]) for item in listed["items"]] == [("Renamed", created_at)]
 
 
 def test_a_job_goes_from_pending_to_completed_with_a_result_that_fits_the_template(

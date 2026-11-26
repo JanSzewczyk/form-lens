@@ -4,12 +4,13 @@ import re
 from typing import Annotated, Final
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Response
+from fastapi import APIRouter, Depends, Path, Query, Response
 
 from formlens.pagination import PageParams, get_page_params
 from formlens.problems import BODY_TOO_LARGE, VALIDATION_ERROR, malformed_body_response, problem_response
 from formlens.templates.dependencies import get_template_service
 from formlens.templates.errors import INVALID_TEMPLATE, TEMPLATE_NOT_FOUND
+from formlens.templates.models import MAX_TEMPLATE_NAME_LENGTH
 from formlens.templates.schemas import TemplateCreate, TemplatePage, TemplateReplace, TemplateResponse
 from formlens.templates.service import TemplateService
 
@@ -69,9 +70,28 @@ def create_template(body: TemplateCreate, service: _Service) -> TemplateResponse
     response_model=TemplatePage,
     responses={422: problem_response(VALIDATION_ERROR)},
 )
-def list_templates(service: _Service, page: Annotated[PageParams, Depends(get_page_params)]) -> TemplatePage:
-    """List templates, oldest first, one page at a time."""
-    items, total = service.page(limit=page.limit, offset=page.offset)
+def list_templates(
+    service: _Service,
+    page: Annotated[PageParams, Depends(get_page_params)],
+    search: Annotated[
+        str | None,
+        Query(
+            max_length=MAX_TEMPLATE_NAME_LENGTH,
+            # No NUL: SQLite reads a LIKE pattern as a C string and would cut it there. Names hold no NUL anyway.
+            pattern=r"^[^\x00]*$",
+            description="Keep templates whose name contains this text, ignoring case by Unicode case folding. "
+            "`%` and `_` are taken literally. A NUL character is refused. The folding has limits: `ß` matches "
+            "`ss`, `İstanbul` is not found by `istanbul` (İ folds to `i` plus a combining dot), and a composed "
+            "accent (`é`) does not match a combining one (`e` and U+0301). Omit it to keep every template.",
+            examples=["inv"],
+        ),
+    ] = None,
+) -> TemplatePage:
+    """List templates, oldest first, one page at a time.
+
+    `search` narrows the list to the templates whose name contains it; `total` counts only those.
+    """
+    items, total = service.page(search=search, limit=page.limit, offset=page.offset)
     return TemplatePage(
         items=[TemplateResponse.from_domain(item) for item in items],
         total=total,

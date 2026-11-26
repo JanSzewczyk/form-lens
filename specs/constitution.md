@@ -3,7 +3,7 @@
 > Source of truth for this project's rules; edit via `/sdd:constitution`. Every WHAT NOT TO DO
 > entry carries a reason (incident, trade-off, upstream constraint) — otherwise it becomes folklore.
 
-**Last reviewed:** 2026-11-14
+**Last reviewed:** 2026-11-19
 **Owners:** Szum-Tech Team
 
 ---
@@ -24,7 +24,7 @@
 - **Runtime:** Node ≥ 26, npm workspaces (one `package-lock.json` at the root)
 - **Framework:** Next.js 16 (App Router, Turbopack, React Compiler), React 19, TypeScript 7 (strict)
 - **Database:** none; the Studio reads data through `@form-lens/api-client`
-- **Tests:** Vitest (`unit` project in Node, `storybook` project in a Playwright browser), Playwright E2E, Storybook with a11y addon
+- **Tests:** Vitest (`unit` project in Node, `storybook` project in a Playwright browser), Playwright E2E, Storybook with a11y addon, MSW (HTTP mocks) and mimicry-js (test data builders)
 - **Lint / format:** Biome, Knip
 - **Other notable libs:** `@szum-tech/design-system`, Tailwind CSS 4, Zod 4, T3 Env, LogLayer + Pino, next-themes
 
@@ -191,7 +191,7 @@ Full rules in `.claude/rules/studio-*.md`; the ones most often broken:
 ## 7. Error handling philosophy
 
 - **api:** every error is Problem Details with its own `ProblemType`; expected failures (validation, a request that stored state forbids: 409/422) are domain errors raised by the domain object or the service and mapped by the registered handler; unexpected failures bubble to the generic handler. A handled error is logged once, where it is handled; logs carry the raw error, never secrets.
-- **studio:** server actions return typed responses validated with Zod; the user-facing text is Polish (`map-service-error.ts`), the logs carry the raw error.
+- **studio:** server actions return typed responses validated with Zod; the user-facing text is English (`map-service-error.ts`), the logs carry the raw error.
 - Never swallow errors silently.
 
 ---

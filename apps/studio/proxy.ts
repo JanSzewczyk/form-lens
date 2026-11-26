@@ -1,6 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createLogger } from "~/lib/logger";
 
+/** Paths a browser polls on a timer; one log line per poll would drown the real traffic. */
+const POLLED_PATHS = new Set(["/api/formlens-status"]);
+
 export function proxy(request: NextRequest) {
   const startTime = Date.now();
   const requestId = crypto.randomUUID();
@@ -13,7 +16,9 @@ export function proxy(request: NextRequest) {
     userAgent: request.headers.get("user-agent")
   });
 
-  requestLogger.info("Incoming request");
+  const level = POLLED_PATHS.has(request.nextUrl.pathname) ? "debug" : "info";
+
+  requestLogger[level]("Incoming request");
 
   // Continue with the request
   const response = NextResponse.next();
@@ -28,7 +33,7 @@ export function proxy(request: NextRequest) {
       duration,
       status: response.status
     })
-    .info("Request completed");
+    [level]("Request completed");
 
   return response;
 }

@@ -23,6 +23,8 @@ NAMING_CONVENTION: Final = {
     "pk": "pk_%(table_name)s",
 }
 _WRITE_OPTION: Final = "formlens_write"
+# SQL function for case-insensitive matching of any script; SQLite's own `lower()` folds ASCII letters only.
+CASEFOLD_FUNCTION: Final = "formlens_casefold"
 
 
 class Base(DeclarativeBase):
@@ -59,9 +61,13 @@ def _on_connect(dbapi_connection: sqlite3.Connection, _record: ConnectionPoolEnt
     """Set the pragmas of every new connection and hand the transactions over to SQLAlchemy.
 
     `isolation_level = None` stops the driver from opening transactions on its own, so the `begin`
-    hook below decides how each one starts. WAL lets readers go on while one writer works.
+    hook below decides how each one starts. WAL lets readers go on while one writer works. The SQL function
+    `formlens_casefold` applies Unicode case folding, which a search needs for names that are not ASCII.
     """
     dbapi_connection.isolation_level = None
+    dbapi_connection.create_function(
+        CASEFOLD_FUNCTION, 1, lambda text: None if text is None else text.casefold(), deterministic=True
+    )
     cursor = dbapi_connection.cursor()
     try:
         cursor.execute("PRAGMA journal_mode=WAL")

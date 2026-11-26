@@ -12,6 +12,8 @@
  */
 
 export type ListTemplatesParams = {
+  /** Keep templates whose name contains this text, ignoring case by Unicode case folding. `%` and `_` are taken literally. A NUL character is refused. The folding has limits: `ß` matches `ss`, `İstanbul` is not found by `istanbul` (İ folds to `i` plus a combining dot), and a composed accent (`é`) does not match a combining one (`e` and U+0301). Omit it to keep every template. */
+  search?: string | null;
   /** Items per page, 1 to 100. Defaults to the configured page size (20 unless DEFAULT_PAGE_SIZE is set). */
   limit?: number | null;
   /**

@@ -26,3 +26,4 @@ class TemplateRow(Base):
     fields: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)

@@ -338,7 +338,7 @@ nothing here measures the container's backend, so the constant stays.
 | `GET` | `/health/ready` | Readiness (`get_readiness`): 200 when every registered check passes (`model`: the document model is loaded), else a 503 problem |
 | `POST` | `/v1/documents/parse` | Parse a document (`parse_document`): multipart `file` (a PDF, PNG, JPEG or TIFF, at most `MAX_UPLOAD_MB`) and the query parameter `format` (`markdown`, the default, or `text`); answers `text`, `page_count`, `elapsed_ms` and `model` |
 | `POST` | `/v1/templates` | Create a template (`create_template`): 201 with the template, its `version` (1) and its generated `json_schema` |
-| `GET` | `/v1/templates` | List templates (`list_templates`), oldest first, as a `Page` (`limit`, `offset`) |
+| `GET` | `/v1/templates` | List templates (`list_templates`), oldest first, as a `Page` (`limit`, `offset`); `search` keeps the names that contain the text, ignoring case (Unicode case folding: `ß` matches `ss`, `istanbul` does not find `İstanbul`, a composed accent does not match a combining one), and `total` counts only those; a NUL in it is a 422. Each template has `last_used_at`: the creation time of its newest extraction, or `null` |
 | `GET` | `/v1/templates/{template_id}` | Read a template (`get_template`) |
 | `PUT` | `/v1/templates/{template_id}` | Replace a template (`replace_template`): the whole body again; the `version` goes up by one |
 | `DELETE` | `/v1/templates/{template_id}` | Delete a template (`delete_template`): 204; extractions already submitted keep their copy |

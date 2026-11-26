@@ -1,14 +1,16 @@
 """Where templates are stored: the port the service needs and the SQLite adapter behind it."""
 
 from datetime import datetime
-from typing import Any, Protocol, cast
+from typing import Any, Final, Protocol, cast
 from uuid import UUID
 
-from sqlalchemy import CursorResult, delete, func, select, update
+from sqlalchemy import CursorResult, delete, func, or_, select, update
 
-from formlens.database import Database
+from formlens.database import CASEFOLD_FUNCTION, Database
 from formlens.templates.models import FieldType, Template, TemplateDraft, TemplateField
 from formlens.templates.tables import TemplateRow
+
+LIKE_ESCAPE: Final = "\\"
 
 
 class TemplateRepository(Protocol):
@@ -22,8 +24,18 @@ class TemplateRepository(Protocol):
         """Return the template, or None when there is none."""
         ...
 
-    def page(self, *, limit: int, offset: int) -> tuple[list[Template], int]:
-        """Return one page, oldest first, and the number of templates in all."""
+    def page(self, *, search: str | None = None, limit: int, offset: int) -> tuple[list[Template], int]:
+        """Return one page, oldest first, and the number of templates that match, across all pages.
+
+        `search`, when given, keeps the templates whose name contains it, ignoring case; `%` and `_` in it are
+        taken literally. Case is folded as in Unicode case folding, with no normalisation: `ß` matches `ss`, `İ`
+        folds to `i` and a combining dot, and a composed accent does not match a combining one. A search with a NUL
+        matches nothing, as no name holds one.
+        """
+        ...
+
+    def mark_used(self, template_id: UUID, at: datetime) -> None:
+        """Record `at` as the last use, unless a later use is already recorded; nothing happens for a missing id."""
         ...
 
     def replace(self, template_id: UUID, draft: TemplateDraft, now: datetime) -> Template | None:
@@ -74,7 +86,14 @@ def _to_template(row: TemplateRow) -> Template:
         version=row.version,
         created_at=row.created_at,
         updated_at=row.updated_at,
+        last_used_at=row.last_used_at,
     )
+
+
+def _contains_pattern(text: str) -> str:
+    """Build the LIKE pattern that matches `text` anywhere, with the escape character, `%` and `_` literal."""
+    escaped = text.replace(LIKE_ESCAPE, LIKE_ESCAPE * 2).replace("%", LIKE_ESCAPE + "%").replace("_", LIKE_ESCAPE + "_")
+    return f"%{escaped}%"
 
 
 class SqliteTemplateRepository:
@@ -105,14 +124,48 @@ class SqliteTemplateRepository:
             row = session.get(TemplateRow, template_id)
             return _to_template(row) if row is not None else None
 
-    def page(self, *, limit: int, offset: int) -> tuple[list[Template], int]:
-        """Read a page in creation order; the id breaks a tie between two templates made at the same time."""
+    def page(self, *, search: str | None = None, limit: int, offset: int) -> tuple[list[Template], int]:
+        """Read a page in creation order; the id breaks a tie between two templates made at the same time.
+
+        The search is `casefold(name) LIKE casefold(:pattern)` with a backslash as the escape character, where
+        `casefold` is the Unicode case folding registered on every connection, so letters outside ASCII match in
+        any case. The total counts the same rows. An empty search keeps every template; a search of spaces is not
+        trimmed. A NUL in the search matches nothing and the database is not asked: SQLite reads the LIKE pattern as
+        a C string and would cut it at the NUL, so `a`, NUL, `zzz` would become `%a` and match the names ending in `a`.
+        """
+        if search and "\x00" in search:
+            return [], 0
+        casefold = getattr(func, CASEFOLD_FUNCTION)
+        match = (
+            casefold(TemplateRow.name).like(casefold(_contains_pattern(search)), escape=LIKE_ESCAPE) if search else None
+        )
+        rows_query = select(TemplateRow)
+        count_query = select(func.count()).select_from(TemplateRow)
+        if match is not None:
+            rows_query = rows_query.where(match)
+            count_query = count_query.where(match)
         with self._database.read() as session:
             rows = session.scalars(
-                select(TemplateRow).order_by(TemplateRow.created_at, TemplateRow.id).limit(limit).offset(offset)
+                rows_query.order_by(TemplateRow.created_at, TemplateRow.id).limit(limit).offset(offset)
             ).all()
-            total = session.scalar(select(func.count()).select_from(TemplateRow)) or 0
+            total = session.scalar(count_query) or 0
             return [_to_template(row) for row in rows], total
+
+    def mark_used(self, template_id: UUID, at: datetime) -> None:
+        """Set `last_used_at` in one UPDATE that only moves it forward.
+
+        Two submissions at the same time may write in either order; the later time wins, so the column is the
+        newest extraction's creation time. A deleted template has no row, so nothing changes.
+        """
+        with self._database.write() as session:
+            session.execute(
+                update(TemplateRow)
+                .where(
+                    TemplateRow.id == template_id,
+                    or_(TemplateRow.last_used_at.is_(None), TemplateRow.last_used_at < at),
+                )
+                .values(last_used_at=at)
+            )
 
     def replace(self, template_id: UUID, draft: TemplateDraft, now: datetime) -> Template | None:
         """Replace the content and bump the version in one UPDATE.

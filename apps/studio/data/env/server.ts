@@ -19,6 +19,11 @@ export const env = createEnv({
       .transform((value) => value === "true" || value === "1"),
     /** Where the FormLens API listens (apps/api). */
     FORMLENS_API_URL: z.url().default("http://localhost:8000"),
+    /**
+     * Largest document the Studio accepts for upload, in megabytes. `next.config.ts` reads it too, for the request body
+     * limits, so a change needs a restart.
+     */
+    FORMLENS_MAX_UPLOAD_MB: z.coerce.number().int().positive().default(25),
     LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).optional().default("info"),
     NODE_ENV: z.enum(["development", "test", "production"]),
     VERCEL_URL: z.string().optional()

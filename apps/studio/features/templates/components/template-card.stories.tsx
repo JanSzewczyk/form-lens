@@ -48,10 +48,16 @@ UsedTemplate.test("Shows the name, description, field count and last-used date",
   await expect(canvas.getByText("Last used 3 days ago")).toBeVisible();
 });
 
-UsedTemplate.test("Links Use form to New document and Edit to the editor of this template", async ({ canvas }) => {
-  await expect(canvas.getByRole("link", { name: "Use form" })).toHaveAttribute("href", "/documents/new");
-  await expect(canvas.getByRole("link", { name: /^edit/i })).toHaveAttribute("href", "/forms/template-1/edit");
-});
+UsedTemplate.test(
+  "Links Use form to the Upload step for this template and Edit to its editor (AC6)",
+  async ({ canvas }) => {
+    await expect(canvas.getByRole("link", { name: "Use form" })).toHaveAttribute(
+      "href",
+      "/documents/new?template=template-1"
+    );
+    await expect(canvas.getByRole("link", { name: /^edit/i })).toHaveAttribute("href", "/forms/template-1/edit");
+  }
+);
 
 export const NeverUsedTemplate = meta.story({
   args: { template: buildTemplate({ fieldCount: 1, last_used_at: null }) },

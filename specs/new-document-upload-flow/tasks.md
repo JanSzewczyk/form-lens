@@ -3,6 +3,17 @@
 **Spec:** `specs/new-document-upload-flow/spec.md`  **Plan:** `specs/new-document-upload-flow/plan.md`
 **Epic:** NDUF
 
+## Flow
+
+```mermaid
+flowchart LR
+  T1["T1 API cancel and filename"] --> T2["T2 Regenerate api-client"]
+  T2 --> T4["T4 Job status page"]
+  T3["T3 New document wizard"] --> T4
+  T4 --> T5["T5 Results, failure, cancel"]
+  T5 --> T6["T6 E2E happy path"]
+```
+
 ## Epic: New Document Upload Flow
 
 ### T1: Cancel extractions and return the file name and form snapshot

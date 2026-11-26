@@ -31,7 +31,8 @@ export function NewDocumentStepper({ current }: NewDocumentStepperProps) {
 
   return (
     <Stepper aria-label="Steps" nonInteractive value={current}>
-      <StepperNav className="flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-6">
+      {/* The design system lays a horizontal nav out as a row at every width; below `sm` it is stacked instead. */}
+      <StepperNav className="items-start gap-3 data-[orientation=horizontal]:flex-col sm:items-center sm:gap-6 sm:data-[orientation=horizontal]:flex-row">
         {STEPS.map((step, index) => (
           <StepperItem completed={index < currentIndex} key={step.value} value={step.value}>
             <StepperTrigger>

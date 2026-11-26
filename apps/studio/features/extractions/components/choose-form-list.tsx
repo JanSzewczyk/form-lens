@@ -18,7 +18,7 @@ import {
   EmptyTitle,
   Input
 } from "@szum-tech/design-system";
-import { FilePlusIcon, SearchIcon, SearchXIcon } from "lucide-react";
+import { FilePlusIcon, FileQuestionIcon, SearchIcon, SearchXIcon } from "lucide-react";
 import Link from "next/link";
 import { type TemplatesResult, TemplatesStatus } from "~/features/templates/types/templates-result";
 
@@ -81,6 +81,27 @@ export function ChooseFormList({ result, search, page }: ChooseFormListProps) {
     );
   }
 
+  if (total > 0 && page > pageCount) {
+    return (
+      <Empty border="dashed">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <FileQuestionIcon aria-hidden />
+          </EmptyMedia>
+          <EmptyTitle className="text-heading-h3">There is no page {page}</EmptyTitle>
+          <EmptyDescription className="text-mute">
+            {pageCount === 1 ? "The forms fit on 1 page." : `The forms fit on ${pageCount} pages.`}
+          </EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button asChild variant="outline">
+            <Link href={pageHref(pageCount, search)}>Go to the last page</Link>
+          </Button>
+        </EmptyContent>
+      </Empty>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <form action={CHOOSE_FORM_PATH} className="flex w-full max-w-[380px] gap-2" method="get" role="search">
@@ -116,10 +137,10 @@ export function ChooseFormList({ result, search, page }: ChooseFormListProps) {
       ) : (
         <ul aria-label="Forms" className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,290px),1fr))] gap-6">
           {templates.map((template) => (
-            <li key={template.id}>
+            <li className="min-w-0" key={template.id}>
               <Card className="h-full">
                 <CardHeader>
-                  <CardTitle className="text-heading-h3 break-words">{template.name}</CardTitle>
+                  <CardTitle className="text-heading-h3 wrap-anywhere">{template.name}</CardTitle>
                   <CardDescription>{template.description}</CardDescription>
                 </CardHeader>
                 <CardContent className="mt-auto">

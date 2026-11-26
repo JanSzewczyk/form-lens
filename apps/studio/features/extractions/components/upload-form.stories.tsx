@@ -215,6 +215,7 @@ export const PhoneWidth = meta.story({
       </div>
     )
   ],
+  globals: { viewport: { isRotated: false, value: "mobile1" } },
   name: "Phone width"
 });
 

@@ -1,12 +1,23 @@
 import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
+import { z } from "zod";
 
 /** The Studio's upload limit, in MB. Read here when the config loads, so a change needs a restart. */
 const DEFAULT_MAX_UPLOAD_MB = 25;
 
+/**
+ * Parsed like `FORMLENS_MAX_UPLOAD_MB` in `data/env/server.ts` (an empty value counts as unset). Importing that module
+ * would validate the whole env here, and with `SKIP_ENV_VALIDATION` it returns the raw string. A value the schema
+ * refuses falls back to the default here; the env validation still refuses it when the app starts.
+ */
 function maxUploadMb(): number {
-  const parsed = Number.parseInt(process.env.FORMLENS_MAX_UPLOAD_MB ?? "", 10);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_UPLOAD_MB;
+  const parsed = z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(DEFAULT_MAX_UPLOAD_MB)
+    .safeParse(process.env.FORMLENS_MAX_UPLOAD_MB || undefined);
+  return parsed.success ? parsed.data : DEFAULT_MAX_UPLOAD_MB;
 }
 
 /** The upload arrives as multipart form data; 1 MB on top of the file covers the boundaries and the other fields. */

@@ -36,22 +36,31 @@ export function UploadForm({ maxMb, onSubmitAction }: UploadFormProps) {
   const [file, setFile] = React.useState<File | null>(null);
   const [rejection, setRejection] = React.useState<string | null>(null);
   const [failure, submitAction, isPending] = React.useActionState(onSubmitAction, null);
+  /** The action's last answer cannot be reset, so a refusal of the file is hidden once that file is replaced or removed. */
+  const [isRefusalOutdated, setIsRefusalOutdated] = React.useState(false);
 
   function submit(formData: FormData) {
     if (file === null) {
       return;
     }
     formData.set("file", file);
+    setIsRefusalOutdated(false);
     submitAction(formData);
+  }
+
+  function replaceFile(next: File | null) {
+    setFile(next);
+    setRejection(null);
+    setIsRefusalOutdated(true);
   }
 
   function chooseFile(files: Array<File>) {
     // A second file replaces the first: only the newest one is kept.
-    setFile(files.at(-1) ?? null);
-    setRejection(null);
+    replaceFile(files.at(-1) ?? null);
   }
 
-  const fileMessage = rejection ?? (failure?.kind === SubmitFailureKind.file ? failure.error : null);
+  const fileMessage =
+    rejection ?? (failure?.kind === SubmitFailureKind.file && !isRefusalOutdated ? failure.error : null);
 
   return (
     <form action={submit} className="flex min-w-0 flex-col gap-5">
@@ -86,7 +95,13 @@ export function UploadForm({ maxMb, onSubmitAction }: UploadFormProps) {
             <ItemDescription>{formatFileSize(file.size)} · ready for analysis</ItemDescription>
           </ItemContent>
           <ItemActions>
-            <Button aria-label="Remove file" onClick={() => setFile(null)} size="icon-sm" type="button" variant="ghost">
+            <Button
+              aria-label="Remove file"
+              onClick={() => replaceFile(null)}
+              size="icon-sm"
+              type="button"
+              variant="ghost"
+            >
               <XIcon aria-hidden />
             </Button>
           </ItemActions>

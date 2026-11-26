@@ -23,9 +23,21 @@ const submitInputSchema = z.object({
   templateId: z.uuid()
 });
 
-/** The extraction id from a `Location` such as `/v1/extractions/<id>`, or `undefined` when it holds none. */
+/** Only resolves a relative `Location`; the host is never used. */
+const LOCATION_BASE = "http://location.invalid";
+
+/** The problem fields safe to log: the whole body may repeat what the user sent, such as the file name. */
+const loggedProblemSchema = z.object({ title: z.string().optional(), type: z.string().optional() });
+
+/**
+ * The extraction id from a `Location` such as `/v1/extractions/<id>` (relative or absolute, with or without a query), or
+ * `undefined` when it holds none.
+ */
 function extractionIdOf(location: string | null): string | undefined {
-  const id = location?.match(/\/extractions\/([^/?#]+)\/?$/)?.[1];
+  if (location === null || !URL.canParse(location, LOCATION_BASE)) {
+    return undefined;
+  }
+  const id = new URL(location, LOCATION_BASE).pathname.match(/\/extractions\/([^/]+)\/?$/)?.[1];
   return z.uuid().safeParse(id).success ? id : undefined;
 }
 
@@ -50,8 +62,15 @@ async function sendDocument(templateId: string, file: File): Promise<Submitted> 
     }
     /** The documented statuses are listed in the client, but a proxy or a crash can answer anything. */
     const refused: { data: unknown; headers: Headers; status: number } = answer;
+    const problem = loggedProblemSchema.safeParse(refused.data);
     log
-      .withMetadata({ operation: "submitExtraction", problem: refused.data, statusCode: refused.status, templateId })
+      .withMetadata({
+        operation: "submitExtraction",
+        problemTitle: problem.success ? problem.data.title : undefined,
+        problemType: problem.success ? problem.data.type : undefined,
+        statusCode: refused.status,
+        templateId
+      })
       .warn("Extraction request refused");
     return { failure: mapExtractionProblem(refused.status, refused.data, refused.headers) };
   } catch (error) {

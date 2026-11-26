@@ -117,6 +117,25 @@ FirstOfTwoPagesWithSearch.test("Keeps the search on the next page (AC2, AC4)", a
   await expect(canvas.queryByRole("link", { name: "Previous" })).not.toBeInTheDocument();
 });
 
+export const PagePastTheLast = meta.story({
+  args: {
+    page: 99,
+    result: { pageSize: 2, status: TemplatesStatus.ok, templates: [], total: 3 },
+    search: "invoice"
+  },
+  name: "Page past the last one"
+});
+
+PagePastTheLast.test("Says the page does not exist and links to the last page (AC4)", async ({ canvas }) => {
+  await expect(canvas.getByText("There is no page 99")).toBeVisible();
+  await expect(canvas.getByRole("link", { name: "Go to the last page" })).toHaveAttribute(
+    "href",
+    "/documents/new?q=invoice&page=2"
+  );
+  await expect(canvas.queryByRole("list", { name: "Forms" })).not.toBeInTheDocument();
+  await expect(canvas.queryByText(/Page 99 of/)).not.toBeInTheDocument();
+});
+
 const phoneWidth = {
   decorators: [
     (Story: () => React.ReactNode) => (

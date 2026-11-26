@@ -21,14 +21,14 @@ function failure(kind: SubmitFailureKind, error: string): SubmitFailure {
   return submitFailureSchema.parse({ error, kind, success: false });
 }
 
-/** `Retry-After` in whole seconds; the HTTP-date form and anything unreadable give `undefined`. */
+/** `Retry-After` in whole seconds; 0, the HTTP-date form and anything unreadable give `undefined`. */
 function retryAfterSeconds(headers: Headers): number | undefined {
   const value = headers.get("retry-after")?.trim() ?? "";
   if (!/^\d+$/.test(value)) {
     return undefined;
   }
   const seconds = Number.parseInt(value, 10);
-  return Number.isSafeInteger(seconds) ? seconds : undefined;
+  return Number.isSafeInteger(seconds) && seconds > 0 ? seconds : undefined;
 }
 
 /**

@@ -1,5 +1,7 @@
 import { describe, expect, test as it } from "vitest";
 
+import { capUploadLimitMb } from "~/data/env/server";
+
 import { checkFile, formatFileSize } from "./accepted-file";
 
 const MB = 1024 * 1024;
@@ -52,5 +54,27 @@ describe("formatFileSize", () => {
     [12, "12 B"]
   ])("shows %d bytes as %s", (bytes, text) => {
     expect(formatFileSize(bytes)).toBe(text);
+  });
+});
+
+describe("capUploadLimitMb", () => {
+  it("caps a higher runtime value at the build-time limit", () => {
+    expect(capUploadLimitMb("50", "25")).toBe(25);
+  });
+
+  it("lets the runtime value lower the limit", () => {
+    expect(capUploadLimitMb(10, "25")).toBe(10);
+  });
+
+  it.each([
+    ["missing runtime", undefined, "50", 25],
+    ["empty runtime", "", "50", 25],
+    ["invalid runtime", "lots", "50", 25],
+    ["missing build", "50", undefined, 25],
+    ["zero build", "50", "0", 25],
+    ["both missing", undefined, undefined, 25],
+    ["missing build, lower runtime", "10", undefined, 10]
+  ])("counts a %s as the default 25 MB", (_case, runtime, build, expected) => {
+    expect(capUploadLimitMb(runtime, build)).toBe(expected);
   });
 });

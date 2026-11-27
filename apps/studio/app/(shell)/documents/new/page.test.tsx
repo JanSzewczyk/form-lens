@@ -12,8 +12,10 @@ vi.mock("~/features/templates/server/load-template", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/features/templates/server/load-template")>();
   return { loadTemplate: vi.fn(actual.loadTemplate) };
 });
+/** The runtime value asks for 50 MB, but the build allowed 25 MB: the page offers 25 MB (AC12). */
 vi.hoisted(() => {
-  vi.stubEnv("FORMLENS_MAX_UPLOAD_MB", "25");
+  vi.stubEnv("FORMLENS_MAX_UPLOAD_MB", "50");
+  vi.stubEnv("FORMLENS_BUILD_MAX_UPLOAD_MB", "25");
 });
 
 import { loadTemplate } from "~/features/templates/server/load-template";
@@ -66,7 +68,7 @@ describe("New document page", () => {
     expect(html).toContain('value="invoice"');
   });
 
-  it("shows the Upload step with the chosen form and its fields (AC5, AC6)", async () => {
+  it("shows the Upload step with the chosen form, its fields and the build-time size limit (AC5, AC6, AC12)", async () => {
     const template = templateResponseBuilder.one({
       overrides: {
         fields: fieldSpecBuilder.many(8),
@@ -81,6 +83,7 @@ describe("New document page", () => {
     expect(html).toContain("VAT invoice");
     expect(html).toContain("8 fields to find");
     expect(html).toContain("Start analysis");
+    expect(html.replaceAll("<!-- -->", "")).toContain("max 25 MB");
     for (const field of template.fields) {
       expect(html).toContain(field.name);
     }

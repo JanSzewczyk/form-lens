@@ -2,7 +2,10 @@ import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
 import { z } from "zod";
 
-/** The Studio's upload limit, in MB. Read here when the config loads, so a change needs a restart. */
+/**
+ * The Studio's upload limit, in MB. The request body limit is fixed when the app is built: raising
+ * `FORMLENS_MAX_UPLOAD_MB` needs a rebuild with the value set at build time; at runtime it can only lower the limit.
+ */
 const DEFAULT_MAX_UPLOAD_MB = 25;
 
 /**
@@ -20,10 +23,17 @@ function maxUploadMb(): number {
   return parsed.success ? parsed.data : DEFAULT_MAX_UPLOAD_MB;
 }
 
+/** The limit this build accepts; `data/env/server.ts` caps the runtime value at it. */
+const BUILD_MAX_UPLOAD_MB = maxUploadMb();
+
 /** The upload arrives as multipart form data; 1 MB on top of the file covers the boundaries and the other fields. */
-const REQUEST_BODY_LIMIT = `${maxUploadMb() + 1}mb` as const;
+const REQUEST_BODY_LIMIT = `${BUILD_MAX_UPLOAD_MB + 1}mb` as const;
 
 export default {
+  /** Inlined where the code reads `process.env.FORMLENS_BUILD_MAX_UPLOAD_MB`, so the runtime limit can be capped at it. */
+  env: {
+    FORMLENS_BUILD_MAX_UPLOAD_MB: String(BUILD_MAX_UPLOAD_MB)
+  },
   experimental: {
     optimizePackageImports: ["@szum-tech/design-system"],
     proxyClientMaxBodySize: REQUEST_BODY_LIMIT,

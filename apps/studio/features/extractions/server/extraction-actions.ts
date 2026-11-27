@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { env } from "~/data/env/server";
+import { maxUploadMb } from "~/data/env/server";
 import {
   CancelFailureKind,
   type CancelResult,
@@ -102,7 +102,7 @@ export async function submitExtraction(
       : mapInvalidFile(issue?.message ?? "Choose a file to analyse.");
   }
 
-  const refusal = checkFile(parsed.data.file, env.FORMLENS_MAX_UPLOAD_MB);
+  const refusal = checkFile(parsed.data.file, maxUploadMb);
   if (refusal !== null) {
     return mapInvalidFile(refusal);
   }

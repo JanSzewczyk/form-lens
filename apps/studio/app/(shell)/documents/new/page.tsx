@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { z } from "zod";
 
-import { env } from "~/data/env/server";
+import { maxUploadMb } from "~/data/env/server";
 import { ChooseFormList } from "~/features/extractions/components/choose-form-list";
 import { FieldsToFindCard } from "~/features/extractions/components/fields-to-find-card";
 import { NewDocumentStep, NewDocumentStepper } from "~/features/extractions/components/new-document-stepper";
@@ -55,7 +55,7 @@ async function loadData(searchParams: PageProps<"/documents/new">["searchParams"
   }
 
   if (!templateIdSchema.safeParse(templateId).success) {
-    return { maxMb: env.FORMLENS_MAX_UPLOAD_MB, step: NewDocumentStep.upload, template: null } as const;
+    return { maxMb: maxUploadMb, step: NewDocumentStep.upload, template: null } as const;
   }
 
   const result = await loadTemplate(templateId);
@@ -63,7 +63,7 @@ async function loadData(searchParams: PageProps<"/documents/new">["searchParams"
     throw new Error(`Failed to load the form: ${result.reason}`);
   }
   return {
-    maxMb: env.FORMLENS_MAX_UPLOAD_MB,
+    maxMb: maxUploadMb,
     step: NewDocumentStep.upload,
     template: result.status === "found" ? result.template : null
   } as const;

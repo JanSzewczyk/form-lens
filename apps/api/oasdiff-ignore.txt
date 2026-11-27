@@ -6,3 +6,7 @@ GET /v1/loans api path removed without deprecation
 POST /v1/loans api path removed without deprecation
 GET /v1/loans/{loan_id} api path removed without deprecation
 POST /v1/loans/{loan_id}/return api path removed without deprecation
+# NDUF-T1: `cancelled` is a new final extraction status; the Studio's client is regenerated from openapi.json (NDUF-T2).
+GET /v1/extractions added the new `cancelled` enum value to the `items/items/status` response property for the response status `200`
+POST /v1/extractions added the new `cancelled` enum value to the `status` response property for the response status `202`
+GET /v1/extractions/{extraction_id} added the new `cancelled` enum value to the `status` response property for the response status `200`

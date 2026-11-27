@@ -1,7 +1,7 @@
 # Feature: New Document Upload Flow
 
 **Branch:** feature/new-document-upload-flow
-**Status:** planned  <!-- draft → clarified → planned → in-progress → done; each /sdd command advances it -->
+**Status:** in-progress  <!-- draft → clarified → planned → in-progress → done; each /sdd command advances it -->
 **Type:** feat  <!-- feat | fix | chore | refactor | docs -->
 **Owner:** JanSzewczyk
 **Created:** 2026-11-26
@@ -41,45 +41,45 @@ Studio users can pick a form, upload a document to be read against it, and follo
 
 <!-- Concrete, measurable. Each AC maps to one test. Ids are stable: never renumber or reuse one. -->
 
-- [ ] AC1: given the user clicks New document in the navigation → the Choose form step lists a card per form with name, description and "N fields", and the stepper marks Choose form as current.
-- [ ] AC2: given forms "VAT invoice" and "Lease agreement" and the search "invoice" → only "VAT invoice" is listed (case-insensitive, part of the name).
-- [ ] AC3: given no forms → the Choose form step shows an empty state with a link to New form; given a search with no match → it shows "no forms match" instead.
-- [ ] AC4: given more forms than fit one page → the user can load the next page and sees all of them.
-- [ ] AC5: given the user selects a form with 8 fields → the Upload step shows its name, "8 fields" and the Fields to find panel with the 8 keys and types in form order; the stepper marks Choose form completed and Upload document current.
-- [ ] AC6: given the user clicks "Use form" on a Forms card → the Upload step opens with that form selected.
-- [ ] AC7: given the Upload step → "Change form" returns to the Choose form step, and "Cancel" returns to the Forms page; nothing is submitted.
-- [ ] AC8: given the Upload step opened for a form that does not exist → a "form not found" message with a link back to Choose form is shown.
-- [ ] AC9: given no file chosen → "Start analysis" is disabled.
-- [ ] AC10: given the user drops a 2 MB PDF → it is shown with its name and "2 MB" and "Start analysis" is enabled; Remove returns to the empty drop zone.
-- [ ] AC11: given a file that is not PDF, PNG, JPEG or TIFF (e.g. `.docx`) → it is refused before any upload with a message naming the accepted types.
-- [ ] AC12: given a file larger than the size limit → it is refused before any upload with a message giving the limit in MB.
-- [ ] AC13: given a file is chosen and the user chooses another → only the new file is kept.
-- [ ] AC14: given a valid file and "Start analysis" → the extraction is created and the user lands on its status page, whose address holds the extraction id.
-- [ ] AC15: given the API refuses the file (empty, too large, unsupported type) → its message is shown at the drop zone and the form and file stay chosen.
-- [ ] AC16: given the form was deleted before the submit → the user is told the form no longer exists and is offered Choose form.
-- [ ] AC17: given the API answers that the queue is full with a wait time of N seconds → the user is told to try again in N seconds and the input stays.
-- [ ] AC18: given the API is unavailable at submit → an error message is shown and the input stays.
-- [ ] AC19: given a `pending` extraction → the stepper shows Uploaded completed and Waiting in queue current, the badge says waiting, and the Results panel shows a placeholder per form field.
-- [ ] AC20: given a `running` extraction → the stepper shows Reading document as current.
-- [ ] AC21: given the status page is open and the extraction moves from `pending` to `running` to `completed` → each change shows without a reload within 3 seconds.
-- [ ] AC22: given the extraction is completed, failed or cancelled → no further status checks are made.
-- [ ] AC23: given the browser tab is hidden → no status checks run; when it becomes visible → one check runs at once and the 3-second checks resume.
-- [ ] AC24: given a completed extraction with result `{"invoice_number": "FV/1/2026", "paid": null}` where `paid` is not required → the Results panel lists `invoice_number` = "FV/1/2026" and `paid` "Not found", in form order, and the stepper shows Done.
-- [ ] AC25: given a completed extraction with `missing_required: ["due_date"]` → `due_date` is marked "Missing required" and the page says 1 required field was not found.
-- [ ] AC26: given a failed extraction with an error message → the page shows that message, and "Try again" opens the Upload step with the same form.
-- [ ] AC27: given the status page of an unfinished extraction is reloaded or opened later by its address → it shows the current status and the checks resume.
-- [ ] AC28: given an unknown extraction id, or one whose result expired → the page says the extraction was not found or has expired and links to New document.
-- [ ] AC29: given the API cannot be reached while the status page is open → a notice says the status cannot be refreshed, the checks continue, and the notice disappears once the API answers again.
-- [ ] AC30: given an unfinished extraction and "Cancel job" → a confirmation is shown; confirming shows the extraction as cancelled and stops the checks; dismissing changes nothing.
-- [ ] AC31: given a completed, failed or cancelled extraction → "Cancel job" is not shown.
-- [ ] AC32: given the API: cancelling a `pending` extraction → it is reported as cancelled and the worker never reads it.
-- [ ] AC33: given the API: cancelling a completed, failed or already cancelled extraction → the request is refused as a conflict and the extraction is unchanged.
-- [ ] AC34: given the API: cancelling an unknown extraction id → not found.
+- [x] AC1: given the user clicks New document in the navigation → the Choose form step lists a card per form with name, description and "N fields", and the stepper marks Choose form as current.
+- [x] AC2: given forms "VAT invoice" and "Lease agreement" and the search "invoice" → only "VAT invoice" is listed (case-insensitive, part of the name).
+- [x] AC3: given no forms → the Choose form step shows an empty state with a link to New form; given a search with no match → it shows "no forms match" instead.
+- [x] AC4: given more forms than fit one page → the user can load the next page and sees all of them.
+- [x] AC5: given the user selects a form with 8 fields → the Upload step shows its name, "8 fields" and the Fields to find panel with the 8 keys and types in form order; the stepper marks Choose form completed and Upload document current.
+- [x] AC6: given the user clicks "Use form" on a Forms card → the Upload step opens with that form selected.
+- [x] AC7: given the Upload step → "Change form" returns to the Choose form step, and "Cancel" returns to the Forms page; nothing is submitted.
+- [x] AC8: given the Upload step opened for a form that does not exist → a "form not found" message with a link back to Choose form is shown.
+- [x] AC9: given no file chosen → "Start analysis" is disabled.
+- [x] AC10: given the user drops a 2 MB PDF → it is shown with its name and "2 MB" and "Start analysis" is enabled; Remove returns to the empty drop zone.
+- [x] AC11: given a file that is not PDF, PNG, JPEG or TIFF (e.g. `.docx`) → it is refused before any upload with a message naming the accepted types.
+- [x] AC12: given a file larger than the size limit → it is refused before any upload with a message giving the limit in MB.
+- [x] AC13: given a file is chosen and the user chooses another → only the new file is kept.
+- [x] AC14: given a valid file and "Start analysis" → the extraction is created and the user lands on its status page, whose address holds the extraction id.
+- [x] AC15: given the API refuses the file (empty, too large, unsupported type) → its message is shown at the drop zone and the form and file stay chosen.
+- [x] AC16: given the form was deleted before the submit → the user is told the form no longer exists and is offered Choose form.
+- [x] AC17: given the API answers that the queue is full with a wait time of N seconds → the user is told to try again in N seconds and the input stays.
+- [x] AC18: given the API is unavailable at submit → an error message is shown and the input stays.
+- [x] AC19: given a `pending` extraction → the stepper shows Uploaded completed and Waiting in queue current, the badge says waiting, and the Results panel shows a placeholder per form field.
+- [x] AC20: given a `running` extraction → the stepper shows Reading document as current.
+- [x] AC21: given the status page is open and the extraction moves from `pending` to `running` to `completed` → each change shows without a reload within 3 seconds.
+- [x] AC22: given the extraction is completed, failed or cancelled → no further status checks are made.
+- [x] AC23: given the browser tab is hidden → no status checks run; when it becomes visible → one check runs at once and the 3-second checks resume.
+- [x] AC24: given a completed extraction with result `{"invoice_number": "FV/1/2026", "paid": null}` where `paid` is not required → the Results panel lists `invoice_number` = "FV/1/2026" and `paid` "Not found", in form order, and the stepper shows Done.
+- [x] AC25: given a completed extraction with `missing_required: ["due_date"]` → `due_date` is marked "Missing required" and the page says 1 required field was not found.
+- [x] AC26: given a failed extraction with an error message → the page shows that message, and "Try again" opens the Upload step with the same form.
+- [x] AC27: given the status page of an unfinished extraction is reloaded or opened later by its address → it shows the current status and the checks resume.
+- [x] AC28: given an unknown extraction id, or one whose result expired → the page says the extraction was not found or has expired and links to New document.
+- [x] AC29: given the API cannot be reached while the status page is open → a notice says the status cannot be refreshed, the checks continue, and the notice disappears once the API answers again.
+- [x] AC30: given an unfinished extraction and "Cancel job" → a confirmation is shown; confirming shows the extraction as cancelled and stops the checks; dismissing changes nothing.
+- [x] AC31: given a completed, failed or cancelled extraction → "Cancel job" is not shown.
+- [x] AC32: given the API: cancelling a `pending` extraction → it is reported as cancelled and the worker never reads it.
+- [x] AC33: given the API: cancelling a completed, failed or already cancelled extraction → the request is refused as a conflict and the extraction is unchanged.
+- [x] AC34: given the API: cancelling an unknown extraction id → not found.
 - [ ] AC35: given a phone-width screen → the flow's steppers and panels stack and no page scrolls horizontally.
-- [ ] AC36: given the API: cancelling a `running` extraction → its status becomes `cancelled` and it never gets a result, even if the worker finishes reading afterwards.
-- [ ] AC37: given the API: one cancelled extraction and `GET /v1/extractions?status=cancelled` → it is listed, and `total` counts it.
-- [ ] AC38: given the API: a document uploaded as `invoice_118_2026.pdf` → the created extraction, and later reads of it, return the file name `invoice_118_2026.pdf`.
-- [ ] AC39: given the status page of an extraction of `invoice_118_2026.pdf` with the form "VAT invoice" → it shows "invoice_118_2026.pdf · VAT invoice", also after a reload.
+- [x] AC36: given the API: cancelling a `running` extraction → its status becomes `cancelled` and it never gets a result, even if the worker finishes reading afterwards.
+- [x] AC37: given the API: one cancelled extraction and `GET /v1/extractions?status=cancelled` → it is listed, and `total` counts it.
+- [x] AC38: given the API: a document uploaded as `invoice_118_2026.pdf` → the created extraction, and later reads of it, return the file name `invoice_118_2026.pdf`.
+- [x] AC39: given the status page of an extraction of `invoice_118_2026.pdf` with the form "VAT invoice" → it shows "invoice_118_2026.pdf · VAT invoice", also after a reload.
 
 ## Edge cases
 

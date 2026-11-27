@@ -1,7 +1,7 @@
 # Plan: New Document Upload Flow
 
 **Spec:** `specs/new-document-upload-flow/spec.md`
-**Status:** tasks-ready
+**Status:** in-progress
 
 ## High-level approach
 

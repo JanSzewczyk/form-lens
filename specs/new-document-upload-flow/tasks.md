@@ -18,7 +18,7 @@ flowchart LR
 
 ### T1: Cancel extractions and return the file name and form snapshot
 project: api
-status: draft
+status: review
 depends_on: []
 acceptance: AC32, AC33, AC34, AC36, AC37, AC38
 plan: High-level approach (API first), Contracts (API → api-client, DB), File-by-file change list › api, Risks (CHECK rebuild, oasdiff, file name)
@@ -47,14 +47,14 @@ scope:
   - concurrency: cancel racing `finish_if_running`, with the `concurrency` marker, proved by removing the guard once;
   - purge of cancelled rows.
 - `make openapi`. If `make openapi-check` fails on the new enum value, add it to `oasdiff-ignore.txt` with the reason.
-files: apps/api/src/formlens/extractions/**, apps/api/src/formlens/migrations/versions/v0003_*.py, apps/api/docs/reference/problem-types.md, apps/api/openapi.json, apps/api/oasdiff-ignore.txt, apps/api/tests/extractions/**, apps/api/tests/migrations/test_migrations.py
+files: apps/api/src/formlens/extractions/**, apps/api/src/formlens/migrations/versions/v0003_*.py, apps/api/docs/reference/problem-types.md, apps/api/openapi.json, apps/api/oasdiff-ignore.txt, apps/api/tests/extractions/**, apps/api/tests/migrations/test_migrations.py, apps/api/tests/test_health.py
 notes:
 - Do not edit `v0001_initial.py`.
 - Run `make check` before handing back. `openapi.json` is generated, never edited by hand.
 
 ### T2: Regenerate the api-client for cancel, file name and snapshot
 project: "@form-lens/api-client"
-status: draft
+status: review
 depends_on: [T1]
 acceptance: AC32, AC38
 plan: Contracts (API → api-client), File-by-file change list › @form-lens/api-client
@@ -65,13 +65,13 @@ scope:
   - includes `cancelled` in `ExtractionStatus` and in the list params;
   - adds `filename`, `template_name` and `fields` to `ExtractionResponse`.
 - `generate:check`, `type-check` and `test:unit` pass. Touch the hand-written `src/fetcher.ts` and `src/index.ts` only if the new operation needs it.
-files: packages/api-client/src/generated/**
+files: packages/api-client/src/generated/**, apps/studio/features/extractions/utils/extraction.builder.ts
 notes:
 - `src/generated` is never edited by hand. Fix the API and regenerate instead.
 
 ### T3: New document wizard: Choose form and Upload with submit
 project: "@form-lens/studio"
-status: draft
+status: in-progress
 depends_on: []
 acceptance: AC1, AC2, AC3, AC4, AC5, AC6, AC7, AC8, AC9, AC10, AC11, AC12, AC13, AC14, AC15, AC16, AC17, AC18, AC35
 plan: High-level approach (Studio: wizard in the URL, server action), File-by-file change list › @form-lens/studio (wizard, config, action, card link), Reference sources (3 · Upload, 1 · Forms card), Risks (body limits)
@@ -96,7 +96,7 @@ scope:
   - unit: `checkFile`, `map-extraction-error`, `submitExtraction` with a mocked client;
   - stories with interaction tests for the steps and every error state;
   - a mimicry-js builder `extraction.builder.ts`.
-files: apps/studio/data/env/server.ts, apps/studio/next.config.ts, apps/studio/.env.example, apps/studio/app/(shell)/documents/new/**, apps/studio/features/extractions/{schemas,utils,server,components}/** (wizard files: extraction.ts, accepted-file.ts, extraction.builder.ts, map-extraction-error.ts, extraction-actions.ts, new-document-stepper, choose-form-list, selected-form-item, fields-to-find-card, upload-form), apps/studio/features/templates/components/template-card.tsx
+files: apps/studio/data/env/server.ts, apps/studio/next.config.ts, apps/studio/.env.example, apps/studio/app/(shell)/documents/new/**, apps/studio/features/extractions/{schemas,utils,server,components}/** (wizard files: extraction.ts, accepted-file.ts, extraction.builder.ts, map-extraction-error.ts, extraction-actions.ts, new-document-stepper, choose-form-list, selected-form-item, fields-to-find-card, upload-form), apps/studio/features/templates/components/template-card.tsx, apps/studio/features/templates/components/template-card.stories.tsx, apps/studio/app/(shell)/placeholder-pages.test.tsx
 notes:
 - Studio rules in `.claude/rules/studio-*.md`: no `&&` rendering, `function` keyword, `Array<T>`, `import * as React`, no `useMemo`/`useCallback`.
 - The API is called only from server code, through `lib/formlens-api.ts`.
@@ -104,7 +104,7 @@ notes:
 
 ### T4: Job status page with live polling
 project: "@form-lens/studio"
-status: draft
+status: review
 depends_on: [T2, T3]
 acceptance: AC19, AC20, AC21, AC22, AC23, AC27, AC28, AC29, AC35, AC39
 plan: High-level approach (Studio: status page, polling via route handler), Contracts (Studio internal GET), File-by-file change list › @form-lens/studio (status page, hook, route handler, breadcrumbs), Reference sources (4 · Processing)
@@ -136,7 +136,7 @@ notes:
 
 ### T5: Results, failure and Cancel job on the status page
 project: "@form-lens/studio"
-status: draft
+status: review
 depends_on: [T4]
 acceptance: AC24, AC25, AC26, AC30, AC31
 plan: File-by-file change list › @form-lens/studio (results-card, extraction-failed, cancel-job-dialog, cancelExtraction), Edge cases (cancel races completion)
@@ -150,11 +150,11 @@ scope:
 - Tests:
   - unit: `result-rows`, `cancelExtraction`;
   - stories: completed (with "Not found" and "Missing required"), failed, cancelled, the confirm and dismiss paths, and the 409 race.
-files: apps/studio/features/extractions/utils/result-rows*.ts, apps/studio/features/extractions/server/extraction-actions*.ts, apps/studio/features/extractions/components/{results-card,extraction-failed,cancel-job-dialog,extraction-status-view}*
+files: apps/studio/features/extractions/utils/result-rows*.ts, apps/studio/features/extractions/server/extraction-actions*.ts, apps/studio/features/extractions/components/{results-card,extraction-failed,cancel-job-dialog,extraction-status-view}*, apps/studio/features/extractions/schemas/extraction.ts, apps/studio/features/extractions/server/load-extraction.test.ts, apps/studio/app/(shell)/jobs/[id]/page.tsx
 
 ### T6: End-to-end happy path of the new document flow
 project: "@form-lens/studio"
-status: draft
+status: review
 depends_on: [T5]
 acceptance: AC6, AC14, AC21, AC24
 plan: File-by-file change list › @form-lens/studio (`tests/e2e/new-document.spec.ts`)
@@ -164,6 +164,6 @@ scope:
   - the status moves pending → running → completed without a reload;
   - the values appear in form order.
 - The API is stubbed, or a fake extractor is used, following the existing E2E setup. The test needs no real models.
-files: apps/studio/tests/e2e/new-document.spec.ts
+files: apps/studio/tests/e2e/new-document.e2e.ts
 
 Order: (T1 → T2) ∥ T3 → T4 → T5 → T6

@@ -6,10 +6,11 @@ import { type APIRequestContext, expect, test as it } from "@playwright/test";
  * Happy path of the new document flow: Use form on a Forms card → Upload → Start analysis → the status page follows
  * the extraction from pending to completed without a reload and lists the results in the order of the form.
  *
- * The test needs an API whose worker runs, with a fake parser and a fake extractor, and skips itself without one. The
- * schemathesis app that forms.e2e.ts documents keeps its worker off (extractions stay `pending`), so start the same app
- * with the worker on. The extractor sleeps 5 s while the job is `running`, longer than the Studio's 3 s poll, so the
- * page shows that state; its `values` must match `FIELDS` below. The CI workflow runs no E2E, so run it by hand:
+ * The test skips itself only when no API answers `/health/ready`. That check covers the model, not the worker, so
+ * against the schemathesis app that forms.e2e.ts documents (its worker is off and extractions stay `pending`) the test
+ * runs and times out. Start the same app with the worker on, as below: the fake extractor sleeps 5 s while a job is
+ * `running`, longer than the Studio's 3 s poll, so the page shows each state, and its `values` must match `FIELDS`.
+ * The CI workflow runs no E2E, so run it by hand:
  *
  *     # apps/api
  *     DB_URL=sqlite:////tmp/e2e.db uv run python -m formlens migrate
@@ -24,27 +25,52 @@ const API_URL = (process.env.FORMLENS_API_URL ?? "http://localhost:8000").replac
 /** A name no stored form has, so the test finds its own card. */
 const FORM_NAME = `New document e2e ${randomUUID()}`;
 
+/** The field types this test's form uses, as the API names them. */
+const FieldType = {
+  date: "date",
+  number: "number",
+  text: "text"
+} as const;
+
+type FieldType = (typeof FieldType)[keyof typeof FieldType];
+
+/** The statuses of an extraction, as the API names them. */
+const ApiStatus = {
+  cancelled: "cancelled",
+  completed: "completed",
+  failed: "failed",
+  pending: "pending",
+  running: "running"
+} as const;
+
+type ApiStatus = (typeof ApiStatus)[keyof typeof ApiStatus];
+
+const FINAL_API_STATUSES: ReadonlyArray<ApiStatus> = [ApiStatus.cancelled, ApiStatus.completed, ApiStatus.failed];
+
 /**
  * The form's fields in their order, which is not alphabetical, and the text the Results panel shows for each: what the
  * fake extractor of the header finds, or `null` for the field it finds nothing for.
  */
-const FIELDS: Array<{ name: string; type: "date" | "number" | "text"; shown: string | null }> = [
-  { name: "total", shown: "1250.5", type: "number" },
-  { name: "invoice_number", shown: "FV/2026/11/042", type: "text" },
-  { name: "due_date", shown: null, type: "date" }
+const FIELDS: Array<{ name: string; type: FieldType; shown: string | null }> = [
+  { name: "total", shown: "1250.5", type: FieldType.number },
+  { name: "invoice_number", shown: "FV/2026/11/042", type: FieldType.text },
+  { name: "due_date", shown: null, type: FieldType.date }
 ];
 
-/** The headline of the status card for pending, running and completed, in the order the extraction moves through. */
-const HEADLINES = ["Waiting in queue", "Reading document", "The document has been read"];
+const PENDING_HEADLINE = "Waiting in queue";
+const RUNNING_HEADLINE = "Reading document";
 const COMPLETED_HEADLINE = "The document has been read";
-/** The steps of the status stepper; the last one is "Done" for every unfinished status, so only its state tells. */
-const STATUS_STEPS = '[aria-label="Extraction status"] [data-slot="stepper-item"]';
+/** The headline of the status card for pending, running and completed, in the order the extraction moves through. */
+const HEADLINES = [PENDING_HEADLINE, RUNNING_HEADLINE, COMPLETED_HEADLINE];
 
 /** The Studio checks the extraction every 3 s; a change may also wait for the request in flight. */
 const POLL_MS = 3000;
 const POLL_SLACK_MS = 1000;
-/** Worst case from the landing to completed: a 2 s idle worker, the 5 s extractor, one poll, and slack. */
-const COMPLETION_TIMEOUT_MS = 25_000;
+/**
+ * Worst case from the landing to completed: the blocker ahead in the queue (a 2 s idle worker and the 5 s extractor),
+ * this job's 5 s, one poll, and slack.
+ */
+const COMPLETION_TIMEOUT_MS = 35_000;
 
 /** A minimal PDF: the API checks for `%PDF-` in the first bytes, and the fake parser reads nothing. */
 const PDF = Buffer.from(
@@ -63,6 +89,10 @@ type HeadlineChange = { at: number; text: string };
 
 /** What the page records in the browser: the marker survives only when the page is never reloaded. */
 type RecordingWindow = Window & { __e2eHeadlines?: Array<HeadlineChange>; __e2eMarker?: string };
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 async function isApiReady(request: APIRequestContext): Promise<boolean> {
   try {
@@ -86,18 +116,35 @@ async function createForm(request: APIRequestContext): Promise<string> {
   return id;
 }
 
+/**
+ * Queues an extraction for the form ahead of the one the test submits. The single worker reads one job at a time and
+ * the fake extractor holds each for 5 s, so the test's job is certain to wait in the queue first.
+ */
+async function queueBlocker(request: APIRequestContext, formId: string) {
+  const response = await request.post(`${API_URL}/v1/extractions`, {
+    multipart: {
+      file: { buffer: PDF, mimeType: "application/pdf", name: "blocker.pdf" },
+      template_id: formId
+    }
+  });
+  expect(response.status(), "the API refused the blocker extraction").toBe(202);
+}
+
 /** When the API first reported each status of the extraction, polled from here until it is final. */
-async function watchApiStatus(request: APIRequestContext, extractionId: string): Promise<Map<string, number>> {
-  const firstSeen = new Map<string, number>();
+async function watchApiStatus(request: APIRequestContext, extractionId: string): Promise<Map<ApiStatus, number>> {
+  const firstSeen = new Map<ApiStatus, number>();
   const deadline = Date.now() + COMPLETION_TIMEOUT_MS;
 
   while (Date.now() < deadline) {
     const response = await request.get(`${API_URL}/v1/extractions/${extractionId}`);
-    const { status } = (await response.json()) as { status: string };
+    if (!response.ok()) {
+      throw new Error(`GET /v1/extractions/${extractionId} answered ${response.status()}`);
+    }
+    const { status } = (await response.json()) as { status: ApiStatus };
     if (!firstSeen.has(status)) {
       firstSeen.set(status, Date.now());
     }
-    if (status === "completed" || status === "failed" || status === "cancelled") {
+    if (FINAL_API_STATUSES.includes(status)) {
       break;
     }
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -135,7 +182,7 @@ it.describe("New document", () => {
     page,
     request
   }, testInfo) => {
-    it.setTimeout(60_000);
+    it.setTimeout(90_000);
     const formId = templateId ?? "";
     expect(formId).not.toBe("");
 
@@ -160,21 +207,18 @@ it.describe("New document", () => {
         name: "invoice.pdf"
       });
       await expect(page.getByText("invoice.pdf", { exact: true })).toBeVisible();
+      await queueBlocker(request, formId);
       await page.getByRole("button", { name: "Start analysis" }).click();
 
       await expect(page).toHaveURL(/\/jobs\/[0-9a-f-]{36}$/);
       extractionId = new URL(page.url()).pathname.split("/").at(-1) ?? "";
       await expect(page.getByRole("heading", { level: 1, name: "Document status" })).toBeVisible();
       await expect(page.getByRole("main").getByText(extractionId, { exact: true })).toBeVisible();
-      // The extractor holds the job for 5 s, so the last step cannot be completed yet: AC24 checks it is later.
-      await expect(page.locator(STATUS_STEPS).last()).not.toHaveAttribute("data-state", "completed");
+      // The blocker holds the worker, so the new extraction lands in the queue.
+      await expect(page.getByRole("heading", { level: 2, name: PENDING_HEADLINE })).toBeVisible();
     });
 
-    await it.step("The status moves to completed without a reload, each change within 3 s (AC21)", async () => {
-      const apiStatus = watchApiStatus(request, extractionId);
-      const headline = page.getByRole("heading", { level: 2, name: new RegExp(`^(${HEADLINES.join("|")})$`) });
-      await expect(headline).toBeVisible();
-
+    await it.step("The status moves to completed without a reload, each change within one 3 s poll plus the request in flight (AC21)", async () => {
       const marker = randomUUID();
       await page.evaluate(
         ({ headlines, marker }) => {
@@ -211,30 +255,38 @@ it.describe("New document", () => {
         }
       });
 
-      await expect(page.getByRole("heading", { level: 2, name: COMPLETED_HEADLINE })).toBeVisible({
-        timeout: COMPLETION_TIMEOUT_MS
-      });
+      // Both settle before either outcome is used, so the API watcher never outlives a failed wait.
+      const [watched, completion] = await Promise.allSettled([
+        watchApiStatus(request, extractionId),
+        expect(
+          page.getByRole("heading", { level: 2, name: COMPLETED_HEADLINE }),
+          "the extraction never completed: is the API the header's worker-on app?"
+        ).toBeVisible({ timeout: COMPLETION_TIMEOUT_MS })
+      ]);
+      if (completion.status === "rejected") {
+        throw completion.reason;
+      }
+      if (watched.status === "rejected") {
+        throw watched.reason;
+      }
+      const firstSeenByApi = watched.value;
 
       const recorded = await page.evaluate(() => {
         const recording = window as RecordingWindow;
         return { changes: recording.__e2eHeadlines ?? [], marker: recording.__e2eMarker };
       });
       const sequence = recorded.changes.map(({ text }) => text);
-      const firstSeenByApi = await apiStatus;
       testInfo.annotations.push({ description: sequence.join(" → "), type: "observed states" });
 
       expect(recorded.marker).toBe(marker);
       expect(navigations).toBe(0);
-      expect(sequence.at(-1)).toBe(COMPLETED_HEADLINE);
-      const positions = sequence.map((text) => HEADLINES.indexOf(text));
-      expect(positions).toEqual([...positions].sort((a, b) => a - b));
-      // The extractor holds the job in `running` for 5 s, longer than one poll, so the page must show it.
-      expect(sequence).toContain("Reading document");
+      // Pending lasts while the blocker runs and running lasts 5 s, each longer than one poll: all three show.
+      expect(sequence).toEqual(HEADLINES);
 
       // A change seen after the recording started came from a poll: no later than one poll after the API had it.
-      const apiStatusByHeadline = new Map([
-        ["Reading document", "running"],
-        [COMPLETED_HEADLINE, "completed"]
+      const apiStatusByHeadline = new Map<string, ApiStatus>([
+        [RUNNING_HEADLINE, ApiStatus.running],
+        [COMPLETED_HEADLINE, ApiStatus.completed]
       ]);
       for (const { at, text } of recorded.changes.slice(1)) {
         const status = apiStatusByHeadline.get(text);
@@ -246,17 +298,13 @@ it.describe("New document", () => {
 
     await it.step("The Results panel lists every field in form order, and the stepper shows Done (AC24)", async () => {
       const rows = page.getByRole("list", { name: "Results" }).getByRole("listitem");
-      await expect(rows).toHaveCount(FIELDS.length);
-      for (const [index, field] of FIELDS.entries()) {
-        const row = rows.nth(index);
-        await expect(row.locator("span").first()).toHaveText(field.name);
-        await expect(row).toContainText(field.shown ?? "Not found");
-      }
+      await expect(rows).toHaveText(
+        FIELDS.map(({ name, shown }) => new RegExp(`^${escapeRegExp(name)}${escapeRegExp(shown ?? "Not found")}$`))
+      );
       await expect(page.getByText("Waiting for the result")).toHaveCount(0);
 
       // "Done" is the last title for pending and running too; only the completed extraction completes that step.
-      const lastStep = page.locator(STATUS_STEPS).last();
-      await expect(lastStep).toHaveText(/Done/);
+      const lastStep = page.getByLabel("Extraction status", { exact: true }).getByRole("tab", { name: /Done$/ });
       await expect(lastStep).toHaveAttribute("data-state", "completed");
     });
   });

@@ -5,7 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from factory.base import Factory
-from factory.declarations import LazyFunction, Sequence
+from factory.declarations import LazyFunction, Sequence, Trait
 
 from formlens.extractions.domain.model import Extraction, ExtractionStatus, SnapshotField, TemplateSnapshot
 
@@ -50,13 +50,20 @@ class TemplateSnapshotFactory(Factory[TemplateSnapshot]):
 
 
 class ExtractionFactory(Factory[Extraction]):
-    """A pending extraction created at `NOW`; pass `id` and `created_at` when a test depends on them."""
+    """A pending extraction created at `NOW`; pass `id` and `created_at` when a test depends on them.
+
+    `cancelled=True` gives one a client cancelled at `NOW`. `filename` is `None` unless a test passes one.
+    """
 
     class Meta:
         model = Extraction
+
+    class Params:
+        cancelled = Trait(status=ExtractionStatus.CANCELLED, finished_at=NOW)  # type: ignore[no-untyped-call]  # factory_boy declarations are untyped
 
     id = Sequence(lambda n: UUID(int=n + 1))  # type: ignore[no-untyped-call]  # factory_boy declarations are untyped
     template = LazyFunction(TemplateSnapshotFactory.build)  # type: ignore[no-untyped-call]  # factory_boy declarations are untyped
     status = ExtractionStatus.PENDING
     attempts = 0
     created_at = NOW
+    filename = None

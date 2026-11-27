@@ -1,12 +1,13 @@
 """Submitting and reading an extraction, with fakes for every port."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import UUID
 
 import pytest
 from structlog.testing import capture_logs
 
 from formlens.extractions.domain.exceptions import (
+    ExtractionNotCancellable,
     ExtractionNotFound,
     QueueFull,
     TemplateMissing,
@@ -14,10 +15,10 @@ from formlens.extractions.domain.exceptions import (
     UploadTooLarge,
     UploadUnsupported,
 )
-from formlens.extractions.domain.model import ExtractionStatus
+from formlens.extractions.domain.model import Extraction, ExtractionStatus
 from formlens.extractions.service_layer.service import utc_now
 from tests.extractions.factories import NOW, TEMPLATE_ID, ExtractionFactory, TemplateSnapshotFactory
-from tests.extractions.fakes import PDF
+from tests.extractions.fakes import PDF, FakeExtractionRepository
 from tests.extractions.harness import Harness
 
 
@@ -237,3 +238,107 @@ def test_an_upload_over_the_limit_names_the_limit() -> None:
     error = UploadTooLarge(25)
 
     assert (error.limit_mb, str(error)) == (25, "The file is larger than 25 MB.")
+
+
+# --- the file name ---------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("given", "kept"),
+    [
+        pytest.param("invoice_118_2026.pdf", "invoice_118_2026.pdf", id="plain"),
+        pytest.param("C:\\fakepath\\invoice.pdf", "invoice.pdf", id="windows-path"),
+        pytest.param("scans/invoice.pdf", "invoice.pdf", id="slash-path"),
+        pytest.param("x" * 300, "x" * 255, id="too-long"),
+        pytest.param("dir/", None, id="no-name-left"),
+        pytest.param(None, None, id="none"),
+    ],
+)
+def test_a_submission_keeps_only_the_last_part_of_the_file_name(given: str | None, kept: str | None) -> None:
+    harness = Harness()
+
+    extraction = harness.service.submit(PDF, TEMPLATE_ID, filename=given)
+
+    assert extraction.filename == kept
+    assert harness.stored(extraction).filename == kept
+
+
+def test_the_file_name_is_never_logged() -> None:
+    harness = Harness()
+
+    with capture_logs() as logs:
+        harness.service.submit(PDF, TEMPLATE_ID, filename="jan_kowalski_medical.pdf")
+
+    assert "jan_kowalski_medical" not in str(logs)
+
+
+# --- cancel ----------------------------------------------------------------------------------------
+
+
+def test_cancelling_a_waiting_extraction_returns_it_cancelled_now_and_drops_its_upload() -> None:
+    harness = Harness()
+    extraction = harness.submit()
+
+    cancelled = harness.service.cancel(extraction.id)
+
+    assert (cancelled.status, cancelled.finished_at) == (ExtractionStatus.CANCELLED, harness.clock.now)
+    assert harness.stored(extraction) == cancelled
+    assert harness.repository.read_input(extraction.id) is None
+
+
+def test_cancelling_is_logged_with_the_id() -> None:
+    harness = Harness()
+    extraction = harness.submit()
+
+    with capture_logs() as logs:
+        harness.service.cancel(extraction.id)
+
+    [line] = [entry for entry in logs if entry["event"] == "extraction_cancelled"]
+    assert line["extraction_id"] == str(extraction.id)
+
+
+def test_cancelling_an_unknown_extraction_is_not_found() -> None:
+    with pytest.raises(ExtractionNotFound, match=str(UUID(int=99))):
+        Harness().service.cancel(UUID(int=99))
+
+
+def test_cancelling_an_extraction_past_its_time_to_live_is_not_found() -> None:
+    harness = Harness()
+    extraction = harness.submit()
+    harness.service.cancel(extraction.id)
+    harness.clock.advance(hours=24)
+
+    with pytest.raises(ExtractionNotFound, match=str(extraction.id)):
+        harness.service.cancel(extraction.id)
+
+
+def test_cancelling_a_completed_extraction_is_refused_and_changes_nothing() -> None:
+    harness = Harness()
+    extraction = harness.submit()
+    harness.processor.run_once()
+    completed = harness.stored(extraction)
+
+    with pytest.raises(ExtractionNotCancellable, match="is completed"):
+        harness.service.cancel(extraction.id)
+
+    assert harness.stored(extraction) == completed
+
+
+class WorkerWinsRepository(FakeExtractionRepository):
+    """A worker completes the job between the service's read and its cancel."""
+
+    def cancel_if_unfinished(self, extraction_id: UUID, now: datetime) -> Extraction | None:
+        taken = self.claim_next(now)
+        assert taken is not None
+        self.finish_if_running(taken.complete({}, now))
+        return super().cancel_if_unfinished(extraction_id, now)
+
+
+def test_a_job_that_ends_between_the_read_and_the_cancel_is_refused_with_the_status_it_ended_in() -> None:
+    harness = Harness(repository=WorkerWinsRepository())
+    extraction = harness.submit()
+
+    with pytest.raises(ExtractionNotCancellable, match="is completed"):
+        harness.service.cancel(extraction.id)
+
+    assert harness.stored(extraction).status is ExtractionStatus.COMPLETED

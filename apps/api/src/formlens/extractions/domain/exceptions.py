@@ -1,6 +1,6 @@
 """Domain errors of the extractions; they know nothing of HTTP.
 
-Two families. The first is raised to a caller of `submit` or `get` and becomes an HTTP problem. The second is
+Two families. The first is raised to a caller of `submit`, `get` or `cancel` and becomes an HTTP problem. The second is
 raised by a port while a job runs and decides how the job ends; it never reaches a client, the extraction
 carries a fixed `error` instead. No message holds document text, a field value or a library's own message.
 """
@@ -70,6 +70,18 @@ class UploadUnsupported(UploadRefused):
 
 class InvalidTransition(ValueError):
     """An extraction was asked to move to a state it cannot reach from where it is."""
+
+
+class ExtractionNotCancellable(InvalidTransition):
+    """The extraction already ended (completed, failed or cancelled), so it cannot be cancelled."""
+
+    def __init__(self, extraction_id: UUID, status: str) -> None:
+        """Name the id and the status it ended in."""
+        super().__init__(
+            f"Extraction {extraction_id} is {status}; only a pending or running extraction can be cancelled."
+        )
+        self.extraction_id = extraction_id
+        self.status = status
 
 
 class JobError(Exception):

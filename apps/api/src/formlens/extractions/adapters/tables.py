@@ -19,7 +19,7 @@ class ExtractionRow(Base):
 
     __tablename__ = "extractions"
     __table_args__ = (
-        CheckConstraint("status IN ('pending', 'running', 'completed', 'failed')", name="status_known"),
+        CheckConstraint("status IN ('pending', 'running', 'completed', 'failed', 'cancelled')", name="status_known"),
         CheckConstraint("attempts >= 0", name="attempts_not_negative"),
         # Claim (oldest pending first) and the queue count read the pending rows in creation order.
         Index("ix_extractions_status_created_at_id", "status", "created_at", "id"),
@@ -42,6 +42,8 @@ class ExtractionRow(Base):
     result: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     error_reason: Mapped[str | None] = mapped_column(String(30), nullable=True)
     error_message: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # The name the client gave the upload (basename, at most 255 characters); NULL for rows from before 0003.
+    filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class ExtractionInputRow(Base):

@@ -1,7 +1,7 @@
 """The worker's step, driven by hand: every way a job can end, with a fake clock and fakes that can be held."""
 
 import threading
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from structlog.testing import capture_logs
@@ -9,6 +9,7 @@ from structlog.testing import capture_logs
 from formlens.database import Database
 from formlens.extractions.adapters.sqlite_repository import SqliteExtractionRepository
 from formlens.extractions.domain.exceptions import (
+    DeadlineExceeded,
     DocumentTooLong,
     FileUnreadable,
     InvalidOutput,
@@ -16,7 +17,7 @@ from formlens.extractions.domain.exceptions import (
     ParseFailed,
     ParserBusy,
 )
-from formlens.extractions.domain.model import FAILURE_MESSAGES, ExtractionStatus, FailureReason
+from formlens.extractions.domain.model import FAILURE_MESSAGES, Extraction, ExtractionStatus, FailureReason
 from tests.extractions.fakes import FakeExtractionRepository, FakeExtractor, FakeTextSource
 from tests.extractions.harness import Harness, wait_until
 
@@ -447,3 +448,66 @@ def test_a_job_that_timed_out_stays_timed_out_through_a_restart_and_a_late_resul
     done = repository.get(next_job.id)
     assert done is not None
     assert (done.status, done.result) == (ExtractionStatus.COMPLETED, {"number": "OK", "buyer": None})
+
+
+# --- a cancelled job -------------------------------------------------------------------------------
+
+
+def test_a_job_cancelled_while_it_waits_is_never_read() -> None:
+    """AC32 in the worker: the claim takes only `pending`, so the parser and the model are never called."""
+    harness = Harness()
+    extraction = harness.submit()
+    cancelled = harness.service.cancel(extraction.id)
+
+    assert harness.processor.run_once() is False
+
+    assert (harness.text_source.calls, harness.extractor.calls) == (0, [])
+    assert harness.stored(extraction) == cancelled
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(None, id="result"),
+        pytest.param(LlmUnavailable(), id="retryable-error"),
+        pytest.param(FileUnreadable(), id="terminal-error"),
+        pytest.param(DeadlineExceeded(), id="deadline"),
+        pytest.param(RuntimeError("untranslated"), id="unknown-error"),
+    ],
+)
+def test_a_job_cancelled_while_the_model_reads_it_stays_cancelled_however_the_read_ends(
+    error: Exception | None,
+) -> None:
+    """AC36: every write-back after the claim needs `running`, so neither a result, a failure nor a retry lands."""
+    harness = Harness(max_attempts=3)
+    extraction = harness.submit()
+    harness.extractor.errors = [error] if error is not None else []
+    harness.extractor.on_call = lambda: harness.service.cancel(extraction.id)
+
+    harness.processor.run_once()
+
+    stored = harness.stored(extraction)
+    assert (stored.status, stored.result, stored.error) == (ExtractionStatus.CANCELLED, None, None)
+    assert harness.repository.count_pending() == 0
+
+
+class CancelAfterClaimRepository(FakeExtractionRepository):
+    """A client cancels the job right after the worker claimed it, before the worker reads the upload."""
+
+    def claim_next(self, now: datetime) -> Extraction | None:
+        taken = super().claim_next(now)
+        if taken is not None:
+            self.cancel_if_unfinished(taken.id, now)
+        return taken
+
+
+def test_a_job_cancelled_before_the_worker_reads_its_upload_stays_cancelled_and_is_not_read() -> None:
+    """The cancel deletes the upload; the worker's `interrupted` write for a missing upload needs `running`."""
+    harness = Harness(repository=CancelAfterClaimRepository())
+    extraction = harness.submit()
+
+    harness.processor.run_once()
+
+    stored = harness.stored(extraction)
+    assert (stored.status, stored.error) == (ExtractionStatus.CANCELLED, None)
+    assert (harness.text_source.calls, harness.extractor.calls) == (0, [])

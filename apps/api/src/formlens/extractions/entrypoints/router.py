@@ -6,8 +6,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Path, Query, Response
 
 from formlens.extractions.domain.model import ExtractionStatus
-from formlens.extractions.entrypoints.dependencies import get_extraction_service, read_template_id
-from formlens.extractions.entrypoints.errors import EXTRACTION_NOT_FOUND, QUEUE_FULL
+from formlens.extractions.entrypoints.dependencies import (
+    get_extraction_service,
+    read_template_id,
+    read_upload_filename,
+)
+from formlens.extractions.entrypoints.errors import EXTRACTION_NOT_CANCELLABLE, EXTRACTION_NOT_FOUND, QUEUE_FULL
 from formlens.extractions.entrypoints.schemas import ExtractionPage, ExtractionResponse
 from formlens.extractions.service_layer.service import ExtractionService
 from formlens.pagination import PageParams, get_page_params
@@ -77,6 +81,7 @@ def create_extraction(
     service: Annotated[ExtractionService, Depends(get_extraction_service)],
     content: Annotated[bytes, Depends(read_upload)],
     template_id: Annotated[UUID, Depends(read_template_id)],
+    filename: Annotated[str | None, Depends(read_upload_filename)],
     response: Response,
 ) -> ExtractionResponse:
     """Queue a document to be read against a template.
@@ -84,8 +89,9 @@ def create_extraction(
     Send the file as multipart form data in the `file` field, with the `template_id` field. The answer comes
     at once, with status 202 and a `Location`; the document is read later. The file is refused at once when it
     is empty, too large or not a PDF, PNG, JPEG or TIFF. A full queue answers 503 with a `Retry-After` header.
+    The file's name is kept as `filename`, without any path the browser sent and cut to 255 characters.
     """
-    extraction = service.submit(content, template_id)
+    extraction = service.submit(content, template_id, filename=filename)
     response.headers["Location"] = f"{EXTRACTIONS_PATH}/{extraction.id}"
     return ExtractionResponse.from_domain(extraction)
 
@@ -150,7 +156,37 @@ def get_extraction(
 
     While `status` is `pending` or `running`, ask again. A `completed` extraction has a `result` with one
     key per field of the template (`null` where the document shows nothing) and the required fields that
-    came back `null` under `missing_required`. A `failed` one has an `error`. A result is kept for a limited
-    time after it ends, then the extraction is gone.
+    came back `null` under `missing_required`. A `failed` one has an `error`; a `cancelled` one has neither. A
+    result is kept for a limited time after it ends, then the extraction is gone.
     """
     return ExtractionResponse.from_domain(service.get(extraction_id))
+
+
+@router.post(
+    "/{extraction_id}/cancel",
+    operation_id="cancel_extraction",
+    response_model=ExtractionResponse,
+    responses={
+        404: problem_response(
+            EXTRACTION_NOT_FOUND,
+            description="No extraction has this id, or its result expired (`extraction-not-found`).",
+        ),
+        409: problem_response(
+            EXTRACTION_NOT_CANCELLABLE,
+            description="The extraction already completed, failed or was cancelled; nothing changed "
+            "(`extraction-not-cancellable`).",
+        ),
+        422: problem_response(VALIDATION_ERROR, description="`extraction_id` is not a UUID (`validation-error`)."),
+    },
+)
+def cancel_extraction(
+    extraction_id: Annotated[UUID, Path(description="Identifier of the extraction.")],
+    service: Annotated[ExtractionService, Depends(get_extraction_service)],
+) -> ExtractionResponse:
+    """Cancel a pending or running extraction.
+
+    The answer is the extraction with `status` `cancelled` and `finished_at` set; it never gets a `result`. A
+    `pending` one is never read. A `running` one may still be read to the end on the server, but its result is
+    dropped. One that already ended is refused with 409 and stays as it was.
+    """
+    return ExtractionResponse.from_domain(service.cancel(extraction_id))

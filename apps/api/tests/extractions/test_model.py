@@ -6,13 +6,14 @@ from uuid import UUID
 
 import pytest
 
-from formlens.extractions.domain.exceptions import InvalidTransition
+from formlens.extractions.domain.exceptions import ExtractionNotCancellable, InvalidTransition
 from formlens.extractions.domain.model import (
     FAILURE_MESSAGES,
     TERMINAL_REASONS,
     Extraction,
     ExtractionStatus,
     FailureReason,
+    upload_filename,
 )
 from tests.extractions.factories import NOW, ExtractionFactory, SnapshotFieldFactory, TemplateSnapshotFactory
 
@@ -115,10 +116,17 @@ def test_a_running_extraction_cannot_be_claimed_again() -> None:
         running().claim(NOW)
 
 
+ENDS: dict[str, Callable[[], Extraction]] = {
+    "completed": lambda: running().complete({}, NOW),
+    "failed": lambda: running().fail(FailureReason.TIMED_OUT, NOW),
+    "cancelled": lambda: running().cancel(NOW),
+}
+
+
 @pytest.mark.parametrize("name", list(MOVES))
-@pytest.mark.parametrize("end", ["completed", "failed"])
+@pytest.mark.parametrize("end", list(ENDS))
 def test_a_finished_extraction_refuses_every_move(name: str, end: str) -> None:
-    finished = running().complete({}, NOW) if end == "completed" else running().fail(FailureReason.TIMED_OUT, NOW)
+    finished = ENDS[end]()
 
     with pytest.raises(InvalidTransition, match=end):
         MOVES[name](finished)
@@ -167,3 +175,72 @@ def test_a_value_that_is_falsy_but_not_null_is_not_missing() -> None:
 def test_an_extraction_that_has_no_result_has_nothing_missing() -> None:
     assert ExtractionFactory.build().missing_required == []
     assert running().fail(FailureReason.TIMED_OUT, NOW).missing_required == []
+
+
+# --- cancel ----------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("state", ["pending", "running"])
+def test_cancelling_an_unfinished_extraction_ends_it_without_a_result_and_keeps_its_attempts(state: str) -> None:
+    unfinished = ExtractionFactory.build() if state == "pending" else running()
+    later = NOW + timedelta(seconds=7)
+
+    cancelled = unfinished.cancel(later)
+
+    assert (cancelled.status, cancelled.finished_at) == (ExtractionStatus.CANCELLED, later)
+    assert (cancelled.result, cancelled.error, cancelled.attempts) == (None, None, unfinished.attempts)
+    assert cancelled.is_finished
+
+
+@pytest.mark.parametrize("end", list(ENDS))
+def test_an_extraction_that_ended_cannot_be_cancelled_and_the_error_names_its_status(end: str) -> None:
+    finished = ENDS[end]()
+
+    with pytest.raises(ExtractionNotCancellable, match=f"is {end}; only a pending or running"):
+        finished.cancel(NOW)
+
+
+def test_a_cancelled_extraction_expires_a_time_to_live_after_it_was_cancelled() -> None:
+    cancelled = ExtractionFactory.build(cancelled=True)
+
+    assert not cancelled.is_expired(NOW + timedelta(hours=23), timedelta(hours=24))
+    assert cancelled.is_expired(NOW + timedelta(hours=24), timedelta(hours=24))
+
+
+# --- the file name ---------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "kept"),
+    [
+        pytest.param("invoice_118_2026.pdf", "invoice_118_2026.pdf", id="plain"),
+        pytest.param("scans/2026/invoice.pdf", "invoice.pdf", id="slash-path"),
+        pytest.param("C:\\fakepath\\invoice.pdf", "invoice.pdf", id="windows-path"),
+        pytest.param("..\\../invoice.pdf", "invoice.pdf", id="mixed-separators"),
+        pytest.param("  invoice.pdf  ", "invoice.pdf", id="surrounding-spaces"),
+        pytest.param("faktura żółw.pdf", "faktura żółw.pdf", id="non-ascii"),
+        pytest.param("dir/", None, id="only-a-directory"),
+        pytest.param("C:\\dir\\", None, id="only-a-windows-directory"),
+        pytest.param("", None, id="empty"),
+        pytest.param("   ", None, id="blank"),
+        pytest.param(None, None, id="none"),
+    ],
+)
+def test_only_the_last_part_of_a_path_is_kept_as_the_file_name(raw: str | None, kept: str | None) -> None:
+    assert upload_filename(raw) == kept
+
+
+def test_a_file_name_longer_than_255_characters_is_cut_to_its_first_255() -> None:
+    raw = "a" * 300 + ".pdf"
+
+    assert upload_filename(f"dir/{raw}") == raw[:255]
+
+
+def test_a_new_extraction_keeps_the_cleaned_file_name() -> None:
+    extraction = Extraction.new(UUID(int=5), TemplateSnapshotFactory.build(), NOW, filename="scans\\invoice.pdf")
+
+    assert extraction.filename == "invoice.pdf"
+
+
+def test_a_new_extraction_without_a_file_name_has_none() -> None:
+    assert Extraction.new(UUID(int=5), TemplateSnapshotFactory.build(), NOW).filename is None

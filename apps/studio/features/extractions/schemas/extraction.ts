@@ -85,11 +85,19 @@ export const CancelFailureKind = {
 export type CancelFailureKind = (typeof CancelFailureKind)[keyof typeof CancelFailureKind];
 
 /** What `cancelExtraction` returns: the cancelled extraction, or why it was not cancelled. */
-export type CancelResult =
-  | { success: true; extraction: ExtractionView }
-  | { success: false; kind: typeof CancelFailureKind.finished; error: string; extraction: ExtractionView }
-  | {
-      success: false;
-      kind: typeof CancelFailureKind.notFound | typeof CancelFailureKind.unavailable;
-      error: string;
-    };
+const cancelResultSchema = z.union([
+  z.object({ extraction: extractionViewSchema, success: z.literal(true) }),
+  z.object({
+    error: z.string(),
+    extraction: extractionViewSchema,
+    kind: z.literal(CancelFailureKind.finished),
+    success: z.literal(false)
+  }),
+  z.object({
+    error: z.string(),
+    kind: z.enum([CancelFailureKind.notFound, CancelFailureKind.unavailable]),
+    success: z.literal(false)
+  })
+]);
+
+export type CancelResult = z.infer<typeof cancelResultSchema>;

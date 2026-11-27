@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test as it, vi } from "vitest"
 
 import { type ExtractionView, ExtractionViewStatus } from "~/features/extractions/schemas/extraction";
 
-import { type ExtractionPollUpdate, startExtractionPoller } from "./extraction-poller";
+import { type ExtractionPollUpdate, ExtractionPollUpdateKind, startExtractionPoller } from "./extraction-poller";
 
 /**
  * The fetch of the Studio route is injected rather than served by MSW: the tests count requests exactly under fake
@@ -92,16 +92,44 @@ describe("startExtractionPoller", () => {
     stop();
   });
 
+  it("checks every 3000 ms when no interval is given", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(() => Promise.resolve(Response.json(viewWith(ExtractionViewStatus.pending))));
+    const stop = startExtractionPoller({
+      fetchImpl,
+      initialStatus: ExtractionViewStatus.pending,
+      onUpdate: () => undefined,
+      url: URL,
+      visibility: new FakeDocument() as unknown as Document
+    });
+
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
   it("reports pending, running and completed in turn within 3 s each, then stops (AC21, AC22)", async () => {
     const { fetchImpl, updates } = setup({
       answers: [json(ExtractionViewStatus.running), json(ExtractionViewStatus.completed)]
     });
 
     await vi.advanceTimersByTimeAsync(INTERVAL_MS);
-    expect(updates.at(-1)).toEqual({ extraction: viewWith(ExtractionViewStatus.running), kind: "found" });
+    expect(updates.at(-1)).toEqual({
+      extraction: viewWith(ExtractionViewStatus.running),
+      kind: ExtractionPollUpdateKind.found
+    });
 
     await vi.advanceTimersByTimeAsync(INTERVAL_MS);
-    expect(updates.at(-1)).toEqual({ extraction: viewWith(ExtractionViewStatus.completed), kind: "found" });
+    expect(updates.at(-1)).toEqual({
+      extraction: viewWith(ExtractionViewStatus.completed),
+      kind: ExtractionPollUpdateKind.found
+    });
 
     await vi.advanceTimersByTimeAsync(INTERVAL_MS * 10);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
@@ -142,7 +170,7 @@ describe("startExtractionPoller", () => {
       visibility.setHidden(false);
       await vi.advanceTimersByTimeAsync(INTERVAL_MS * 10);
 
-      expect(updates).toEqual([{ extraction: viewWith(status), kind: "found" }]);
+      expect(updates).toEqual([{ extraction: viewWith(status), kind: ExtractionPollUpdateKind.found }]);
       expect(fetchImpl).toHaveBeenCalledOnce();
     }
   );
@@ -224,7 +252,9 @@ describe("startExtractionPoller", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(firstSignal?.aborted).toBe(true);
-    expect(updates).toEqual([{ extraction: viewWith(ExtractionViewStatus.running), kind: "found" }]);
+    expect(updates).toEqual([
+      { extraction: viewWith(ExtractionViewStatus.running), kind: ExtractionPollUpdateKind.found }
+    ]);
     await vi.advanceTimersByTimeAsync(INTERVAL_MS);
     expect(fetchImpl).toHaveBeenCalledTimes(3);
     stop();
@@ -240,11 +270,14 @@ describe("startExtractionPoller", () => {
     });
 
     await vi.advanceTimersByTimeAsync(INTERVAL_MS);
-    expect(updates.at(-1)).toEqual({ kind: "unreachable" });
+    expect(updates.at(-1)).toEqual({ kind: ExtractionPollUpdateKind.unreachable });
     await vi.advanceTimersByTimeAsync(INTERVAL_MS);
-    expect(updates.at(-1)).toEqual({ kind: "unreachable" });
+    expect(updates.at(-1)).toEqual({ kind: ExtractionPollUpdateKind.unreachable });
     await vi.advanceTimersByTimeAsync(INTERVAL_MS);
-    expect(updates.at(-1)).toEqual({ extraction: viewWith(ExtractionViewStatus.running), kind: "found" });
+    expect(updates.at(-1)).toEqual({
+      extraction: viewWith(ExtractionViewStatus.running),
+      kind: ExtractionPollUpdateKind.found
+    });
     expect(fetchImpl).toHaveBeenCalledTimes(3);
     stop();
   });
@@ -254,7 +287,7 @@ describe("startExtractionPoller", () => {
 
     await vi.advanceTimersByTimeAsync(INTERVAL_MS);
 
-    expect(updates).toEqual([{ kind: "unreachable" }]);
+    expect(updates).toEqual([{ kind: ExtractionPollUpdateKind.unreachable }]);
     stop();
   });
 
@@ -263,7 +296,7 @@ describe("startExtractionPoller", () => {
 
     await vi.advanceTimersByTimeAsync(INTERVAL_MS * 5);
 
-    expect(updates).toEqual([{ kind: "not-found" }]);
+    expect(updates).toEqual([{ kind: ExtractionPollUpdateKind.notFound }]);
     expect(fetchImpl).toHaveBeenCalledOnce();
   });
 

@@ -2,7 +2,7 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 
-import { loadExtraction } from "~/features/extractions/server/load-extraction";
+import { ExtractionResultStatus, loadExtraction } from "~/features/extractions/server/load-extraction";
 
 /** The answer is the extraction's state right now; it must never be prerendered or cached. */
 export const dynamic = "force-dynamic";
@@ -17,10 +17,10 @@ export async function GET(_request: Request, context: RouteContext<"/api/extract
   const { id } = await context.params;
   const result = await loadExtraction(id);
 
-  if (result.status === "found") {
+  if (result.status === ExtractionResultStatus.found) {
     return NextResponse.json(result.extraction, { headers: NO_STORE });
   }
-  if (result.status === "not-found") {
+  if (result.status === ExtractionResultStatus.notFound) {
     return NextResponse.json({ notFound: true }, { headers: NO_STORE, status: 404 });
   }
   return NextResponse.json({ unreachable: true }, { headers: NO_STORE, status: 502 });

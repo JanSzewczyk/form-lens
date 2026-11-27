@@ -3,6 +3,8 @@ import addonDocs from "@storybook/addon-docs";
 import { DocsContainer, type DocsContainerProps } from "@storybook/addon-docs/blocks";
 import { definePreview } from "@storybook/nextjs-vite";
 import { DARK_MODE_EVENT_NAME } from "@storybook-community/storybook-dark-mode";
+import { setupWorker } from "msw/browser";
+import addonMsw from "msw-storybook-addon";
 import * as React from "react";
 import { ThemeProvider } from "~/components/providers/theme-provider";
 
@@ -58,8 +60,18 @@ function ThemeDecorator({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Starts the MSW service worker once for all stories. A request no handler matches goes to the network as it is, since
+ * the same worker sees Storybook's and Vite's own module requests.
+ */
+async function startMockServiceWorker() {
+  const worker = setupWorker();
+  await worker.start({ onUnhandledFrame: "bypass", quiet: true });
+  return worker;
+}
+
 export default definePreview({
-  addons: [addonA11y(), addonDocs()],
+  addons: [addonA11y(), addonDocs(), addonMsw(startMockServiceWorker)],
   decorators: [
     (Story) => (
       <ThemeDecorator>

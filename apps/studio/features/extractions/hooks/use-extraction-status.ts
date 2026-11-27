@@ -2,9 +2,7 @@ import * as React from "react";
 
 import type { ExtractionView } from "~/features/extractions/schemas/extraction";
 
-import { startExtractionPoller } from "./extraction-poller";
-
-const POLL_INTERVAL_MS = 3000;
+import { ExtractionPollUpdateKind, startExtractionPoller } from "./extraction-poller";
 
 type ExtractionStatusState = {
   extraction: ExtractionView;
@@ -18,7 +16,7 @@ type ExtractionStatusState = {
  * The live state of an extraction, starting from the one the server rendered. It checks the Studio route
  * `/api/extractions/<id>` every 3 s until the status is final; see `startExtractionPoller` for the rules.
  */
-export function useExtractionStatus(initial: ExtractionView, intervalMs = POLL_INTERVAL_MS): ExtractionStatusState {
+export function useExtractionStatus(initial: ExtractionView, intervalMs?: number): ExtractionStatusState {
   const [state, setState] = React.useState<ExtractionStatusState>({
     extraction: initial,
     isNotFound: false,
@@ -33,10 +31,10 @@ export function useExtractionStatus(initial: ExtractionView, intervalMs = POLL_I
         intervalMs,
         onUpdate(update) {
           setState((current) => {
-            if (update.kind === "found") {
+            if (update.kind === ExtractionPollUpdateKind.found) {
               return { extraction: update.extraction, isNotFound: false, isUnreachable: false };
             }
-            if (update.kind === "not-found") {
+            if (update.kind === ExtractionPollUpdateKind.notFound) {
               return { ...current, isNotFound: true, isUnreachable: false };
             }
             return { ...current, isUnreachable: true };

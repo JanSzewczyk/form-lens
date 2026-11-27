@@ -75,7 +75,7 @@ Studio users can pick a form, upload a document to be read against it, and follo
 - [x] AC32: given the API: cancelling a `pending` extraction → it is reported as cancelled and the worker never reads it.
 - [x] AC33: given the API: cancelling a completed, failed or already cancelled extraction → the request is refused as a conflict and the extraction is unchanged.
 - [x] AC34: given the API: cancelling an unknown extraction id → not found.
-- [ ] AC35: given a phone-width screen → the flow's steppers and panels stack and no page scrolls horizontally.
+- [x] AC35: given a phone-width screen → the flow's steppers and panels stack and no page scrolls horizontally.
 - [x] AC36: given the API: cancelling a `running` extraction → its status becomes `cancelled` and it never gets a result, even if the worker finishes reading afterwards.
 - [x] AC37: given the API: one cancelled extraction and `GET /v1/extractions?status=cancelled` → it is listed, and `total` counts it.
 - [x] AC38: given the API: a document uploaded as `invoice_118_2026.pdf` → the created extraction, and later reads of it, return the file name `invoice_118_2026.pdf`.

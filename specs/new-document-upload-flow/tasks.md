@@ -18,7 +18,7 @@ flowchart LR
 
 ### T1: Cancel extractions and return the file name and form snapshot
 project: api
-status: review
+status: in-progress
 depends_on: []
 acceptance: AC32, AC33, AC34, AC36, AC37, AC38
 plan: High-level approach (API first), Contracts (API → api-client, DB), File-by-file change list › api, Risks (CHECK rebuild, oasdiff, file name)
@@ -47,7 +47,7 @@ scope:
   - concurrency: cancel racing `finish_if_running`, with the `concurrency` marker, proved by removing the guard once;
   - purge of cancelled rows.
 - `make openapi`. If `make openapi-check` fails on the new enum value, add it to `oasdiff-ignore.txt` with the reason.
-files: apps/api/src/formlens/extractions/**, apps/api/src/formlens/migrations/versions/v0003_*.py, apps/api/docs/reference/problem-types.md, apps/api/openapi.json, apps/api/oasdiff-ignore.txt, apps/api/tests/extractions/**, apps/api/tests/migrations/test_migrations.py, apps/api/tests/test_health.py
+files: apps/api/src/formlens/extractions/**, apps/api/src/formlens/migrations/versions/v0003_*.py, apps/api/docs/reference/problem-types.md, apps/api/openapi.json, apps/api/oasdiff-ignore.txt, apps/api/tests/extractions/**, apps/api/tests/migrations/test_migrations.py, apps/api/tests/test_health.py, apps/api/README.md, packages/api-client/src/generated/**
 notes:
 - Do not edit `v0001_initial.py`.
 - Run `make check` before handing back. `openapi.json` is generated, never edited by hand.
@@ -96,7 +96,7 @@ scope:
   - unit: `checkFile`, `map-extraction-error`, `submitExtraction` with a mocked client;
   - stories with interaction tests for the steps and every error state;
   - a mimicry-js builder `extraction.builder.ts`.
-files: apps/studio/data/env/server.ts, apps/studio/next.config.ts, apps/studio/.env.example, apps/studio/app/(shell)/documents/new/**, apps/studio/features/extractions/{schemas,utils,server,components}/** (wizard files: extraction.ts, accepted-file.ts, extraction.builder.ts, map-extraction-error.ts, extraction-actions.ts, new-document-stepper, choose-form-list, selected-form-item, fields-to-find-card, upload-form), apps/studio/features/templates/components/template-card.tsx, apps/studio/features/templates/components/template-card.stories.tsx, apps/studio/app/(shell)/placeholder-pages.test.tsx
+files: apps/studio/data/env/server.ts, apps/studio/next.config.ts, apps/studio/.env.example, apps/studio/app/(shell)/documents/new/**, apps/studio/features/extractions/{schemas,utils,server,components}/** (wizard files: extraction.ts, accepted-file.ts, extraction.builder.ts, map-extraction-error.ts, extraction-actions.ts, new-document-stepper, choose-form-list, selected-form-item, fields-to-find-card, upload-form), apps/studio/features/templates/components/template-card.tsx, apps/studio/features/templates/components/template-card.stories.tsx, apps/studio/app/(shell)/placeholder-pages.test.tsx, apps/studio/features/templates/server/load-template*.ts, apps/studio/Dockerfile, apps/studio/.gitignore, apps/studio/biome.json, apps/studio/knip.json
 notes:
 - Studio rules in `.claude/rules/studio-*.md`: no `&&` rendering, `function` keyword, `Array<T>`, `import * as React`, no `useMemo`/`useCallback`.
 - The API is called only from server code, through `lib/formlens-api.ts`.
@@ -104,7 +104,7 @@ notes:
 
 ### T4: Job status page with live polling
 project: "@form-lens/studio"
-status: review
+status: in-progress
 depends_on: [T2, T3]
 acceptance: AC19, AC20, AC21, AC22, AC23, AC27, AC28, AC29, AC35, AC39
 plan: High-level approach (Studio: status page, polling via route handler), Contracts (Studio internal GET), File-by-file change list › @form-lens/studio (status page, hook, route handler, breadcrumbs), Reference sources (4 · Processing)
@@ -130,7 +130,7 @@ scope:
 - Tests:
   - unit: `status-steps`, `load-extraction`, route handler, and the hook with fake timers and `visibilitychange`;
   - stories: pending, running, unreachable, no file name, and a file name with HTML.
-files: apps/studio/app/(shell)/jobs/[id]/**, apps/studio/app/api/extractions/[id]/**, apps/studio/features/extractions/schemas/extraction.ts, apps/studio/features/extractions/server/load-extraction*.ts, apps/studio/features/extractions/hooks/**, apps/studio/features/extractions/utils/status-steps*.ts, apps/studio/features/extractions/components/{extraction-status-view,status-stepper,results-card}*, apps/studio/components/layout/app-breadcrumbs*.tsx
+files: apps/studio/app/(shell)/jobs/[id]/**, apps/studio/app/api/extractions/[id]/**, apps/studio/features/extractions/schemas/extraction.ts, apps/studio/features/extractions/server/load-extraction*.ts, apps/studio/features/extractions/hooks/**, apps/studio/features/extractions/utils/status-steps*.ts, apps/studio/features/extractions/components/{extraction-status-view,status-stepper,results-card}*, apps/studio/components/layout/app-breadcrumbs*.tsx, apps/studio/.storybook/**, apps/studio/package.json, package-lock.json, apps/studio/public/mockServiceWorker.js
 notes:
 - The status type must handle `cancelled` from the regenerated client (T2).
 

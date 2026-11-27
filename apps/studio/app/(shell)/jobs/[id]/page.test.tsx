@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, test as it, vi } from "vitest";
 
+import { ExtractionViewStatus } from "~/features/extractions/schemas/extraction";
 import { extractionResponseBuilder } from "~/features/extractions/utils/extraction.builder";
 import { resetLog } from "~/tests/unit/mock-logger";
 import { apiUrl, HttpResponse, http, problem, server } from "~/tests/unit/msw/server";
@@ -35,7 +36,7 @@ describe("the job status page", () => {
       overrides: {
         fields: [{ name: "invoice_number", required: true, type: "text" }],
         filename: "invoice_118_2026.pdf",
-        status: "running",
+        status: ExtractionViewStatus.running,
         template_name: "VAT invoice"
       }
     });

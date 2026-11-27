@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test as it, vi } from "vitest";
 
+import { ExtractionViewStatus } from "~/features/extractions/schemas/extraction";
 import { extractionResponseBuilder } from "~/features/extractions/utils/extraction.builder";
 import { resetLog } from "~/tests/unit/mock-logger";
 import { apiUrl, HttpResponse, http, problem, server } from "~/tests/unit/msw/server";
@@ -19,14 +20,14 @@ describe("GET /api/extractions/[id]", () => {
   });
 
   it("answers 200 with the extraction view and no-store", async () => {
-    const extraction = extractionResponseBuilder.one({ overrides: { status: "running" } });
+    const extraction = extractionResponseBuilder.one({ overrides: { status: ExtractionViewStatus.running } });
     server.use(http.get(apiUrl(`/v1/extractions/${extraction.id}`), () => HttpResponse.json(extraction)));
 
     const response = await get(extraction.id);
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    await expect(response.json()).resolves.toMatchObject({ id: extraction.id, status: "running" });
+    await expect(response.json()).resolves.toMatchObject({ id: extraction.id, status: ExtractionViewStatus.running });
   });
 
   it("answers 404 { notFound } for an unknown or expired extraction (AC28)", async () => {

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test as it, vi } from "vitest";
 
+import { ExtractionViewStatus } from "~/features/extractions/schemas/extraction";
 import { extractionResponseBuilder } from "~/features/extractions/utils/extraction.builder";
 import { resetLog } from "~/tests/unit/mock-logger";
 import { apiUrl, HttpResponse, http, problem, server } from "~/tests/unit/msw/server";
@@ -35,12 +36,12 @@ describe("loadExtraction", () => {
   });
 
   it("reads a cancelled extraction", async () => {
-    const extraction = extractionResponseBuilder.one({ overrides: { status: "cancelled" } });
+    const extraction = extractionResponseBuilder.one({ overrides: { status: ExtractionViewStatus.cancelled } });
     server.use(http.get(apiUrl("/v1/extractions/:id"), () => HttpResponse.json(extraction)));
 
     const result = await loadExtraction(extraction.id);
 
-    expect(result.status === "found" ? result.extraction.status : null).toBe("cancelled");
+    expect(result.status === "found" ? result.extraction.status : null).toBe(ExtractionViewStatus.cancelled);
   });
 
   it("reports a 404, which is also how the API answers an expired result, as not found (AC28)", async () => {

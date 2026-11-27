@@ -17,6 +17,7 @@ import { isCurrentSection, NAV_ITEMS } from "./nav-items";
 type Crumb = { href: string; label: string };
 
 const EDIT_FORM_PATH = /^\/forms\/[^/]+\/edit$/;
+const JOB_PATH = /^\/jobs\/([^/]+)$/;
 
 function getCrumbs(pathname: string): Array<Crumb> {
   const section = NAV_ITEMS.find((item) => isCurrentSection(pathname, item.href));
@@ -29,6 +30,11 @@ function getCrumbs(pathname: string): Array<Crumb> {
     crumbs.push({ href: pathname, label: "New form" });
   } else if (EDIT_FORM_PATH.test(pathname)) {
     crumbs.push({ href: pathname, label: "Edit form" });
+  } else {
+    const jobId = JOB_PATH.exec(pathname)?.[1];
+    if (jobId !== undefined) {
+      crumbs.push({ href: pathname, label: jobId });
+    }
   }
   return crumbs;
 }

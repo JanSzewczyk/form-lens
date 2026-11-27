@@ -13,7 +13,12 @@ const next = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({ redirect: next.redirect }));
-vi.mock("~/lib/logger", async () => (await import("~/tests/unit/mock-logger")).loggerModule);
+/** Primed here: importing the env logs that the runtime limit was capped, before any `beforeEach` runs. */
+vi.mock("~/lib/logger", async () => {
+  const mockLogger = await import("~/tests/unit/mock-logger");
+  mockLogger.resetLog();
+  return mockLogger.loggerModule;
+});
 /**
  * Environment validation is skipped in tests, so the schema's default limit does not apply; set before the import. The
  * runtime value asks for 50 MB, but the build allowed 2 MB, so the limit is 2 MB (AC12).

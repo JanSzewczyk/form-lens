@@ -25,6 +25,8 @@
       "!**/.next/**",
       "!**/node_modules/**",
       "!**/coverage/**",
+      "!**/coverage-unit/**",
+      "!**/coverage-storybook/**",
       "!**/storybook-static/**",
       "!**/playwright-report/**",
       "!**/test-results/**",

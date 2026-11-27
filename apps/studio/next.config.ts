@@ -1,30 +1,15 @@
 import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
-import { z } from "zod";
+
+/** A relative import: the `~/` alias does not resolve here. The module has no side effects, unlike `data/env/server.ts`. */
+import { parseUploadLimitMb } from "./features/extractions/utils/upload-limit";
 
 /**
- * The Studio's upload limit, in MB. The request body limit is fixed when the app is built: raising
- * `FORMLENS_MAX_UPLOAD_MB` needs a rebuild with the value set at build time; at runtime it can only lower the limit.
+ * The limit this build accepts, parsed like `FORMLENS_MAX_UPLOAD_MB` in `data/env/server.ts`, which caps the runtime value
+ * at it. The request body limit is fixed here: raising `FORMLENS_MAX_UPLOAD_MB` needs a rebuild with the value set at
+ * build time; at runtime it can only lower the limit.
  */
-const DEFAULT_MAX_UPLOAD_MB = 25;
-
-/**
- * Parsed like `FORMLENS_MAX_UPLOAD_MB` in `data/env/server.ts` (an empty value counts as unset). Importing that module
- * would validate the whole env here, and with `SKIP_ENV_VALIDATION` it returns the raw string. A value the schema
- * refuses falls back to the default here; the env validation still refuses it when the app starts.
- */
-function maxUploadMb(): number {
-  const parsed = z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(DEFAULT_MAX_UPLOAD_MB)
-    .safeParse(process.env.FORMLENS_MAX_UPLOAD_MB || undefined);
-  return parsed.success ? parsed.data : DEFAULT_MAX_UPLOAD_MB;
-}
-
-/** The limit this build accepts; `data/env/server.ts` caps the runtime value at it. */
-const BUILD_MAX_UPLOAD_MB = maxUploadMb();
+const BUILD_MAX_UPLOAD_MB = parseUploadLimitMb(process.env.FORMLENS_MAX_UPLOAD_MB);
 
 /** The upload arrives as multipart form data; 1 MB on top of the file covers the boundaries and the other fields. */
 const REQUEST_BODY_LIMIT = `${BUILD_MAX_UPLOAD_MB + 1}mb` as const;

@@ -1,14 +1,13 @@
 import { Button, Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@szum-tech/design-system";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { z } from "zod";
 
 import { maxUploadMb } from "~/data/env/server";
 import { ChooseFormList } from "~/features/extractions/components/choose-form-list";
 import { NewDocumentStep, NewDocumentStepper } from "~/features/extractions/components/new-document-stepper";
 import { UploadStepLayout } from "~/features/extractions/components/upload-step-layout";
 import { submitExtraction } from "~/features/extractions/server/extraction-actions";
-import { loadTemplate } from "~/features/templates/server/load-template";
+import { isTemplateId, loadTemplate } from "~/features/templates/server/load-template";
 import { loadTemplates } from "~/features/templates/server/load-templates";
 
 export const metadata: Metadata = {
@@ -22,8 +21,6 @@ export const dynamic = "force-dynamic";
 const MAX_SEARCH_LENGTH = 100;
 /** The last page whose offset stays inside the API's 2**31 - 1 limit with 12 forms per page (see the Forms page). */
 const MAX_PAGE = 178_956_971;
-
-const templateIdSchema = z.uuid();
 
 type SearchParams = PageProps<"/documents/new">["searchParams"] extends Promise<infer Params> ? Params : never;
 
@@ -52,19 +49,15 @@ async function loadData(searchParams: PageProps<"/documents/new">["searchParams"
     return { page, result: await loadTemplates({ page, search }), search, step: NewDocumentStep.chooseForm } as const;
   }
 
-  if (!templateIdSchema.safeParse(templateId).success) {
-    return { maxMb: maxUploadMb, step: NewDocumentStep.upload, template: null } as const;
+  if (!isTemplateId(templateId)) {
+    return { step: NewDocumentStep.upload, template: null } as const;
   }
 
   const result = await loadTemplate(templateId);
   if (result.status === "unavailable") {
     throw new Error(`Failed to load the form: ${result.reason}`);
   }
-  return {
-    maxMb: maxUploadMb,
-    step: NewDocumentStep.upload,
-    template: result.status === "found" ? result.template : null
-  } as const;
+  return { step: NewDocumentStep.upload, template: result.status === "found" ? result.template : null } as const;
 }
 
 export default async function NewDocumentPage({ searchParams }: PageProps<"/documents/new">) {
@@ -95,7 +88,7 @@ export default async function NewDocumentPage({ searchParams }: PageProps<"/docu
         </Empty>
       ) : (
         <UploadStepLayout
-          maxMb={data.maxMb}
+          maxMb={maxUploadMb}
           onSubmitAction={submitExtraction.bind(null, data.template.id)}
           template={data.template}
         />

@@ -6,11 +6,16 @@ import { resetLog } from "~/tests/unit/mock-logger";
 import { apiUrl, HttpResponse, http, problem, server } from "~/tests/unit/msw/server";
 
 vi.mock("~/features/extractions/server/extraction-actions", () => ({ submitExtraction: vi.fn() }));
-vi.mock("~/lib/logger", async () => (await import("~/tests/unit/mock-logger")).loggerModule);
+/** Primed here: importing the env logs that the runtime limit was capped, before any `beforeEach` runs. */
+vi.mock("~/lib/logger", async () => {
+  const mockLogger = await import("~/tests/unit/mock-logger");
+  mockLogger.resetLog();
+  return mockLogger.loggerModule;
+});
 /** The real loader behind a spy, so a test can see that an id was never sent to the API. */
 vi.mock("~/features/templates/server/load-template", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/features/templates/server/load-template")>();
-  return { loadTemplate: vi.fn(actual.loadTemplate) };
+  return { ...actual, loadTemplate: vi.fn(actual.loadTemplate) };
 });
 /** The runtime value asks for 50 MB, but the build allowed 25 MB: the page offers 25 MB (AC12). */
 vi.hoisted(() => {
@@ -107,6 +112,18 @@ describe("New document page", () => {
 
     await expect(renderPage({ template: TEMPLATE_ID })).rejects.toThrow("Failed to load the form");
   });
+  it.each([
+    ["a server error", () => problem(500)],
+    ["a form of an unexpected shape", () => HttpResponse.json({ id: TEMPLATE_ID, name: "VAT invoice" })]
+  ])(
+    "throws to the error page, not to Form not found, when the API answers %s on the Upload step",
+    async (_case, answer) => {
+      server.use(http.get(apiUrl(`/v1/templates/${TEMPLATE_ID}`), answer));
+
+      await expect(renderPage({ template: TEMPLATE_ID })).rejects.toThrow("Failed to load the form");
+    }
+  );
+
   it("lets the user page through every form, keeping the search (AC2, AC4)", async () => {
     const forms = templateResponseBuilder.many(13);
     const asked = servePagedForms(forms);

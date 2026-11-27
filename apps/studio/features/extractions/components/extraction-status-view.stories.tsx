@@ -145,15 +145,16 @@ export const Completed = meta.story({ args: { initial: COMPLETED } });
 Completed.test(
   "Lists the results in form order with Not found and Missing required, and the stepper shows Done (AC24, AC25)",
   async ({ canvas }) => {
-    const items = Array.from(canvas.getByRole("list", { name: "Results" }).querySelectorAll("li"));
+    const rows = canvas.getAllByRole("listitem");
 
-    await expect(items.map((item) => item.textContent)).toEqual([
-      "invoice_numberFV/1/2026",
-      "paidNot found",
-      "due_dateMissing required"
-    ]);
+    await expect(rows).toHaveLength(COMPLETED.fields.length);
+    await expect(rows[0]).toHaveTextContent("invoice_numberFV/1/2026");
+    await expect(rows[1]).toHaveTextContent("paidNot found");
+    await expect(rows[2]).toHaveTextContent("due_dateMissing required");
     await expect(canvas.getByText("1 required field was not found.")).toBeVisible();
     await expect(canvas.getAllByRole("tab").at(-1)).toHaveTextContent("Done");
+    // Every step is behind a completed extraction, so none is the current one.
+    await expect(canvas.queryByRole("tab", { current: "step" })).not.toBeInTheDocument();
     await expect(canvas.getByText("Completed")).toBeVisible();
   }
 );
@@ -336,13 +337,12 @@ CompletedByCheck.test(
   "Lists the polled values, Not found and Missing required in form order (AC24, AC25)",
   async ({ canvas }) => {
     await expect(await canvas.findByText("The document has been read")).toBeVisible();
-    const rows = Array.from(canvas.getByRole("list", { name: "Results" }).querySelectorAll("li"));
+    const rows = canvas.getAllByRole("listitem");
 
-    await expect(rows.map((row) => row.textContent)).toEqual([
-      "invoice_numberFV/1/2026",
-      "paidNot found",
-      "due_dateMissing required"
-    ]);
+    await expect(rows).toHaveLength(COMPLETED.fields.length);
+    await expect(rows[0]).toHaveTextContent("invoice_numberFV/1/2026");
+    await expect(rows[1]).toHaveTextContent("paidNot found");
+    await expect(rows[2]).toHaveTextContent("due_dateMissing required");
     await expect(canvas.getByText("1 required field was not found.")).toBeVisible();
   }
 );

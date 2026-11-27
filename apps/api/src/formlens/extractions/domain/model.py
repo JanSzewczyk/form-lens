@@ -57,16 +57,21 @@ TERMINAL_REASONS: frozenset[FailureReason] = frozenset(
 # The longest file name an extraction keeps; a longer one is cut.
 MAX_FILENAME_LENGTH = 255
 
+# The characters a kept file name loses: the C0 controls (below U+0020) and DEL (U+007F), as a `str.translate` table.
+_CONTROL_CHARACTERS = dict.fromkeys([*range(0x20), 0x7F])
+
 
 def upload_filename(raw: str | None) -> str | None:
     r"""Return the name a client gave its upload as it is kept: the last path part, trimmed, at most 255 characters.
 
-    A browser may send a whole path (`C:\fakepath\invoice.pdf`), so the name is cut at the last `/` or `\`.
-    A name that is empty once its path and spaces are gone is no name: `None`.
+    Control characters (below U+0020, and U+007F) are removed first, so a NUL, tab or newline never reaches the
+    database or a response. A browser may send a whole path (`C:\fakepath\invoice.pdf`), so the name is cut at the
+    last `/` or `\`. A name that is empty once its control characters, path and spaces are gone is no name: `None`.
     """
     if raw is None:
         return None
-    name = raw.replace("\\", "/").rsplit("/", 1)[-1].strip()[:MAX_FILENAME_LENGTH]
+    visible = raw.translate(_CONTROL_CHARACTERS)
+    name = visible.replace("\\", "/").rsplit("/", 1)[-1].strip()[:MAX_FILENAME_LENGTH]
     return name or None
 
 

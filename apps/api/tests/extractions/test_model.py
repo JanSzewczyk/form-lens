@@ -224,6 +224,14 @@ def test_a_cancelled_extraction_expires_a_time_to_live_after_it_was_cancelled() 
         pytest.param("", None, id="empty"),
         pytest.param("   ", None, id="blank"),
         pytest.param(None, None, id="none"),
+        pytest.param("a\x00b.pdf", "ab.pdf", id="nul-inside"),
+        pytest.param("\x00\x1f\x7f", None, id="only-control-characters"),
+        pytest.param("in\tvoice.pdf", "invoice.pdf", id="tab-inside"),
+        pytest.param("in\nvoice.pdf", "invoice.pdf", id="newline-inside"),
+        pytest.param("a\rb.pdf", "ab.pdf", id="carriage-return-inside"),
+        pytest.param("a\x7fb.pdf", "ab.pdf", id="del-inside"),
+        pytest.param(" \x00 ", None, id="spaces-around-a-nul"),
+        pytest.param("dir/\x00", None, id="only-a-nul-after-the-path"),
     ],
 )
 def test_only_the_last_part_of_a_path_is_kept_as_the_file_name(raw: str | None, kept: str | None) -> None:
@@ -234,6 +242,12 @@ def test_a_file_name_longer_than_255_characters_is_cut_to_its_first_255() -> Non
     raw = "a" * 300 + ".pdf"
 
     assert upload_filename(f"dir/{raw}") == raw[:255]
+
+
+def test_control_characters_are_removed_before_the_name_is_cut_to_255() -> None:
+    raw = "a" * 300 + ".pdf"
+
+    assert upload_filename("\x00" * 10 + raw) == raw[:255]
 
 
 def test_a_new_extraction_keeps_the_cleaned_file_name() -> None:

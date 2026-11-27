@@ -51,10 +51,11 @@ class ExtractionResponse(BaseModel):
     fields: list[ExtractionFieldResponse] = Field(
         description="The fields of the template as they were when the document was submitted, in template order; "
         "a later edit or delete of the template does not change them.",
+        examples=[[{"name": "invoice_number", "type": "text", "required": True}]],
     )
     filename: str | None = Field(
-        description="The name the client gave the uploaded file, without any path, at most 255 characters. "
-        "`null` when it gave none or the extraction was submitted before file names were kept.",
+        description="The name the client gave the uploaded file, without control characters or any path, at most 255 "
+        "characters. `null` when it gave none or the extraction was submitted before file names were kept.",
         examples=["invoice_118_2026.pdf"],
     )
     result: dict[str, Any] | None = Field(

@@ -56,6 +56,26 @@ def submit(
     )
 
 
+def submit_raw_filename(client: TestClient, template_id: str, filename: bytes) -> Any:
+    """Send the file name byte for byte: httpx percent-encodes control characters in a multipart file name."""
+    boundary = b"formlens-test-boundary"
+    body = b"".join(
+        [
+            b"--" + boundary + b"\r\n",
+            b'Content-Disposition: form-data; name="template_id"\r\n\r\n',
+            template_id.encode() + b"\r\n",
+            b"--" + boundary + b"\r\n",
+            b'Content-Disposition: form-data; name="file"; filename="' + filename + b'"\r\n',
+            b"Content-Type: application/pdf\r\n\r\n",
+            PDF + b"\r\n",
+            b"--" + boundary + b"--\r\n",
+        ]
+    )
+    return client.post(
+        URL, content=body, headers={"Content-Type": f"multipart/form-data; boundary={boundary.decode()}"}
+    )
+
+
 def processor(app: FastAPI) -> ExtractionProcessor:
     return app.state.extraction_processor  # type: ignore[no-any-return]  # set by the lifespan
 
@@ -1442,6 +1462,27 @@ def test_the_file_name_is_returned_when_created_when_read_and_when_listed(client
 )
 def test_only_the_last_part_of_a_path_in_the_file_name_is_kept(client: TestClient, sent: str, kept: str | None) -> None:
     created = submit(client, make_template(client)["id"], filename=sent).json()
+
+    assert created["filename"] == kept
+    assert client.get(f"{URL}/{created['id']}").json()["filename"] == kept
+
+
+@pytest.mark.parametrize(
+    ("sent", "kept"),
+    [
+        pytest.param(b"a\x00b.pdf", "ab.pdf", id="nul-inside"),
+        pytest.param(b"\x00\x1f\x7f", None, id="only-control-characters"),
+        pytest.param(b"in\tvoice.pdf", "invoice.pdf", id="tab-inside"),
+        pytest.param(b"in\nvoice.pdf", "invoice.pdf", id="newline-inside"),
+        pytest.param(b"a\x7fb.pdf", "ab.pdf", id="del-inside"),
+        pytest.param(b"a\x1bb.pdf", "ab.pdf", id="escape-inside"),
+    ],
+)
+def test_control_characters_are_removed_from_the_file_name(client: TestClient, sent: bytes, kept: str | None) -> None:
+    response = submit_raw_filename(client, make_template(client)["id"], sent)
+    assert response.status_code == 202
+
+    created = response.json()
 
     assert created["filename"] == kept
     assert client.get(f"{URL}/{created['id']}").json()["filename"] == kept

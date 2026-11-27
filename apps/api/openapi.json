@@ -181,6 +181,15 @@
           },
           "fields": {
             "description": "The fields of the template as they were when the document was submitted, in template order; a later edit or delete of the template does not change them.",
+            "examples": [
+              [
+                {
+                  "name": "invoice_number",
+                  "required": true,
+                  "type": "text"
+                }
+              ]
+            ],
             "items": {
               "$ref": "#/components/schemas/ExtractionFieldResponse"
             },
@@ -196,7 +205,7 @@
                 "type": "null"
               }
             ],
-            "description": "The name the client gave the uploaded file, without any path, at most 255 characters. `null` when it gave none or the extraction was submitted before file names were kept.",
+            "description": "The name the client gave the uploaded file, without control characters or any path, at most 255 characters. `null` when it gave none or the extraction was submitted before file names were kept.",
             "examples": [
               "invoice_118_2026.pdf"
             ],
@@ -1244,7 +1253,7 @@
         ]
       },
       "post": {
-        "description": "Queue a document to be read against a template.\n\nSend the file as multipart form data in the `file` field, with the `template_id` field. The answer comes\nat once, with status 202 and a `Location`; the document is read later. The file is refused at once when it\nis empty, too large or not a PDF, PNG, JPEG or TIFF. A full queue answers 503 with a `Retry-After` header.\nThe file's name is kept as `filename`, without any path the browser sent and cut to 255 characters.",
+        "description": "Queue a document to be read against a template.\n\nSend the file as multipart form data in the `file` field, with the `template_id` field. The answer comes\nat once, with status 202 and a `Location`; the document is read later. The file is refused at once when it\nis empty, too large or not a PDF, PNG, JPEG or TIFF. A full queue answers 503 with a `Retry-After` header.\nThe file's name is kept as `filename`, without control characters or any path the browser sent, and cut\nto 255 characters.",
         "operationId": "create_extraction",
         "requestBody": {
           "content": {
@@ -1265,7 +1274,7 @@
                 }
               }
             },
-            "description": "The document is queued. Poll the `Location` until `status` is `completed` or `failed`.",
+            "description": "The document is queued. Poll the `Location` until `status` is `completed`, `failed` or `cancelled`.",
             "headers": {
               "Location": {
                 "description": "Where to read the extraction.",

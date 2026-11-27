@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, Form, Request
 from fastapi.exceptions import RequestValidationError
+from starlette.datastructures import UploadFile
 
 from formlens.config import Settings, get_settings
 from formlens.extractions.adapters.parsing_text_source import ParsingTextSource
@@ -88,3 +89,13 @@ async def read_template_id(
             ]
         )
     return template_id
+
+
+async def read_upload_filename(request: Request) -> str | None:
+    """Return the file name the client sent with the `file` part, as it was sent, or None.
+
+    `read_upload` has already parsed the form, which Starlette caches on the request. The form holds Starlette's
+    `UploadFile` (FastAPI's is a subclass of it). The service keeps only the last path part of the name.
+    """
+    upload = (await request.form()).get("file")
+    return upload.filename if isinstance(upload, UploadFile) else None

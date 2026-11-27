@@ -22,4 +22,5 @@ export const ExtractionStatus = {
   running: 'running',
   completed: 'completed',
   failed: 'failed',
+  cancelled: 'cancelled',
 } as const;

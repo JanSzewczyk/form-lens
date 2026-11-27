@@ -149,3 +149,46 @@ def test_submissions_racing_the_deletion_of_their_template_are_accepted_or_refus
     assert removal.result() == 204
     assert set(statuses) <= {202, 404}
     assert app.state.extraction_repository.count_pending() == statuses.count(202)
+
+
+@pytest.mark.concurrency
+@pytest.mark.parametrize("_round", ROUNDS)
+def test_a_cancel_and_a_worker_result_at_the_same_moment_leave_exactly_one_of_them_written(
+    database: Database, _round: int
+) -> None:
+    """AC36 under a race: per job, either the cancel or the result wins whole, never both."""
+    repository = SqliteExtractionRepository(database)
+    jobs = ids(THREADS)
+    for i, job_id in enumerate(jobs):
+        repository.add(
+            ExtractionFactory.build(id=job_id, created_at=NOW + timedelta(seconds=i)), CONTENT, max_pending=100
+        )
+    claimed = [repository.claim_next(NOW + timedelta(seconds=10)) for _ in jobs]
+    results = [job.complete({"number": "42", "buyer": None}, NOW + timedelta(seconds=30)) for job in claimed if job]
+    cancelled_at = NOW + timedelta(seconds=20)
+    barrier = threading.Barrier(2 * len(results), timeout=5)
+
+    def finish(result: Extraction) -> bool:
+        barrier.wait()
+        return repository.finish_if_running(result)
+
+    def cancel(result: Extraction) -> bool:
+        barrier.wait()
+        return repository.cancel_if_unfinished(result.id, cancelled_at) is not None
+
+    with ThreadPoolExecutor(2 * len(results)) as pool:  # pool size >= Barrier parties
+        finished = [pool.submit(finish, result) for result in results]
+        cancels = [pool.submit(cancel, result) for result in results]
+        outcomes = [(f.result(), c.result()) for f, c in zip(finished, cancels, strict=True)]
+
+    assert len(results) == len(jobs)
+    assert all(finish_won != cancel_won for finish_won, cancel_won in outcomes)  # exactly one write per job
+    stored = [repository.get(result.id) for result in results]
+    expected = [
+        result if finish_won else ExtractionFactory.build(id=result.id).claim(NOW).cancel(cancelled_at)
+        for result, (finish_won, _) in zip(results, outcomes, strict=True)
+    ]
+    assert [(row.status, row.result) if row else None for row in stored] == [
+        (item.status, item.result) for item in expected
+    ]
+    assert all(repository.read_input(result.id) is None for result in results)

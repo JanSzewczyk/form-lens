@@ -1,4 +1,4 @@
-"""Submit an extraction and read it back; knows nothing of HTTP, SQL or the model."""
+"""Submit an extraction, read it back or cancel it; knows nothing of HTTP, SQL or the model."""
 
 import uuid
 from collections.abc import Callable, Collection
@@ -7,7 +7,7 @@ from uuid import UUID
 
 import structlog
 
-from formlens.extractions.domain.exceptions import ExtractionNotFound
+from formlens.extractions.domain.exceptions import ExtractionNotCancellable, ExtractionNotFound
 from formlens.extractions.domain.model import Extraction, ExtractionStatus
 from formlens.extractions.domain.ports import ExtractionRepository, TemplateCatalog, TextSource
 
@@ -20,7 +20,7 @@ def utc_now() -> datetime:
 
 
 class ExtractionService:
-    """Queue a document for extraction and read the state of a job."""
+    """Queue a document for extraction, read the state of a job and cancel one."""
 
     def __init__(
         self,
@@ -40,12 +40,14 @@ class ExtractionService:
         self._result_ttl = result_ttl
         self._clock = clock
 
-    def submit(self, content: bytes, template_id: UUID) -> Extraction:
+    def submit(self, content: bytes, template_id: UUID, *, filename: str | None = None) -> Extraction:
         """Queue `content` to be read against the template; the work happens later, in the worker.
 
         The upload is checked first, because that is cheap, and the template is copied at this moment: a later
         edit or delete does not change this job. The "last used" date of the template is best effort: the job is
-        stored before it is written, so a failure there is logged and the job is still returned.
+        stored before it is written, so a failure there is logged and the job is still returned. `filename` is
+        the name the client gave the upload; only its last path part is kept, cut to 255 characters, and it is
+        never logged (it can name a person or a case).
 
         Raises:
             UploadRefused: The file is empty, too large or not a supported document.
@@ -54,7 +56,7 @@ class ExtractionService:
         """
         self._text_source.check(content)
         snapshot = self._catalog.snapshot(template_id)
-        extraction = Extraction.new(uuid.uuid7(), snapshot, self._clock())
+        extraction = Extraction.new(uuid.uuid7(), snapshot, self._clock(), filename=filename)
         self._repository.add(extraction, content, max_pending=self._max_pending)
         self._mark_used(template_id, extraction)
         log.info(
@@ -99,3 +101,24 @@ class ExtractionService:
         if extraction is None or extraction.is_expired(self._clock(), self._result_ttl):
             raise ExtractionNotFound(extraction_id)
         return extraction
+
+    def cancel(self, extraction_id: UUID) -> Extraction:
+        """Cancel a pending or running extraction and return it; it never gets a result.
+
+        The extraction decides whether it can be cancelled; the repository makes the same move atomic, so a job
+        that ends between the read and the write is refused as well. A worker reading the job is not stopped:
+        its result is dropped when it finishes.
+
+        Raises:
+            ExtractionNotFound: There is no such extraction, or it expired.
+            ExtractionNotCancellable: The extraction already ended.
+        """
+        now = self._clock()
+        self.get(extraction_id).cancel(now)
+        cancelled = self._repository.cancel_if_unfinished(extraction_id, now)
+        if cancelled is None:
+            # It ended (or was purged) after it was read: report what it is now.
+            ended = self.get(extraction_id)
+            raise ExtractionNotCancellable(extraction_id, ended.status.value)
+        log.info("extraction_cancelled", extraction_id=str(extraction_id), attempts=cancelled.attempts)
+        return cancelled

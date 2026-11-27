@@ -1,8 +1,8 @@
 """The extraction repository on SQLite.
 
 Every method is one short transaction. The ones that decide something are one statement each, so two workers
-or two requests at the same moment cannot both win: the claim, the terminal write, the release, the recovery,
-the purge and the queue cap.
+or two requests at the same moment cannot both win: the claim, the terminal write, the cancel, the release, the
+recovery, the purge and the queue cap.
 """
 
 from datetime import datetime
@@ -61,6 +61,7 @@ def _to_extraction(row: ExtractionRow) -> Extraction:
         finished_at=row.finished_at,
         result=row.result,
         error=error,
+        filename=row.filename,
     )
 
 
@@ -94,6 +95,7 @@ class SqliteExtractionRepository:
             "result": extraction.result,
             "error_reason": extraction.error.reason.value if extraction.error else None,
             "error_message": extraction.error.message if extraction.error else None,
+            "filename": extraction.filename,
         }
         pending = (
             select(func.count()).select_from(ExtractionRow).where(ExtractionRow.status == "pending").scalar_subquery()
@@ -195,6 +197,25 @@ class SqliteExtractionRepository:
             if changed:
                 session.execute(delete(ExtractionInputRow).where(ExtractionInputRow.extraction_id == finished.id))
             return changed > 0
+
+    def cancel_if_unfinished(self, extraction_id: UUID, now: datetime) -> Extraction | None:
+        """Cancel a pending or running extraction in one UPDATE and delete its upload.
+
+        The guard of "an ended job cannot be cancelled": the predicate is in the UPDATE, so a job that completed
+        or failed between the client's read and this write is not overwritten. A worker still reading a job
+        cancelled here writes nothing later, because `finish_if_running` and `release_if_running` need `running`.
+        """
+        with self._database.write() as session:
+            row = session.execute(
+                update(ExtractionRow)
+                .where(ExtractionRow.id == extraction_id, ExtractionRow.status.in_(("pending", "running")))
+                .values(status=ExtractionStatus.CANCELLED.value, finished_at=now)
+                .returning(ExtractionRow)
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            session.execute(delete(ExtractionInputRow).where(ExtractionInputRow.extraction_id == extraction_id))
+            return _to_extraction(row)
 
     def release_if_running(self, released: Extraction, *, claimed_attempts: int) -> bool:
         """Put a running job back to pending, only if it is still running with `claimed_attempts`."""

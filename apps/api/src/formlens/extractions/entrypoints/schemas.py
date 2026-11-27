@@ -20,13 +20,21 @@ class ExtractionErrorResponse(BaseModel):
     )
 
 
+class ExtractionFieldResponse(BaseModel):
+    """One field of the template as it was when the document was submitted."""
+
+    name: str = Field(description="The key of the field in `result`.", examples=["invoice_number"])
+    type: str = Field(description="The type of the field in the template.", examples=["text"])
+    required: bool = Field(description="Whether the template marks the field as required.", examples=[True])
+
+
 class ExtractionResponse(BaseModel):
     """An extraction: where it is, and its result once it has one."""
 
     id: UUID = Field(description="Identifier of the extraction.", examples=["0192f5e0-5a3b-7c11-9d2e-3f6a1b2c4d5e"])
     status: ExtractionStatus = Field(
         description="`pending` waits for the worker, `running` is being read, `completed` has a `result`, "
-        "`failed` has an `error`.",
+        "`failed` has an `error`, `cancelled` was stopped by a client and never gets a result.",
         examples=["pending"],
     )
     template_id: UUID = Field(
@@ -36,6 +44,19 @@ class ExtractionResponse(BaseModel):
         description="The version of the template that was copied when the document was submitted; a later edit "
         "does not change this extraction.",
         examples=[1],
+    )
+    template_name: str = Field(
+        description="The name of the template as it was when the document was submitted.", examples=["Invoice"]
+    )
+    fields: list[ExtractionFieldResponse] = Field(
+        description="The fields of the template as they were when the document was submitted, in template order; "
+        "a later edit or delete of the template does not change them.",
+        examples=[[{"name": "invoice_number", "type": "text", "required": True}]],
+    )
+    filename: str | None = Field(
+        description="The name the client gave the uploaded file, without control characters or any path, at most 255 "
+        "characters. `null` when it gave none or the extraction was submitted before file names were kept.",
+        examples=["invoice_118_2026.pdf"],
     )
     result: dict[str, Any] | None = Field(
         default=None,
@@ -55,7 +76,9 @@ class ExtractionResponse(BaseModel):
         default=None, description="When the worker took the job (UTC); `null` while it waits."
     )
     finished_at: datetime | None = Field(
-        default=None, description="When the extraction ended (UTC). The result is kept for a limited time after this."
+        default=None,
+        description="When the extraction ended or was cancelled (UTC). The result is kept for a limited time after "
+        "this.",
     )
 
     @classmethod
@@ -66,6 +89,12 @@ class ExtractionResponse(BaseModel):
             status=extraction.status,
             template_id=extraction.template.template_id,
             template_version=extraction.template.version,
+            template_name=extraction.template.name,
+            fields=[
+                ExtractionFieldResponse(name=item.name, type=item.type, required=item.required)
+                for item in extraction.template.fields
+            ],
+            filename=extraction.filename,
             result=extraction.result,
             missing_required=extraction.missing_required,
             error=(

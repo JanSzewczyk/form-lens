@@ -12,11 +12,14 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import inspect, text
+from sqlalchemy import CheckConstraint, inspect, text
+from sqlalchemy.exc import IntegrityError
 
-import formlens.extractions.adapters.tables  # registers its tables on Base.metadata for the comparison
-import formlens.templates.tables  # noqa: F401
+import formlens.templates.tables  # noqa: F401  # registers its tables on Base.metadata for the comparison
 from formlens.database import Base, Database
+from formlens.extractions.adapters.sqlite_repository import SqliteExtractionRepository
+from formlens.extractions.adapters.tables import ExtractionRow
+from formlens.extractions.domain.model import FAILURE_MESSAGES, ExtractionStatus, FailureReason
 from formlens.logging_config import configure_logging
 from formlens.migrations import (
     SCRIPT_LOCATION,
@@ -228,3 +231,130 @@ def test_a_backfilled_date_keeps_its_microseconds_and_reads_back_as_utc(url: str
 
     listed = SqliteTemplateRepository(database).page(limit=10, offset=0)[0]
     assert [item.last_used_at for item in listed] == [datetime(2026, 3, 5, 8, 0, 0, 500000, tzinfo=UTC)]
+
+
+# --- 0003: extractions.filename and the status `cancelled` ------------------------------------------
+
+UPLOAD = b"%PDF-1.7 waiting upload"
+
+
+def insert_upload(database: Database, extraction_id: UUID) -> None:
+    with database.engine.begin() as connection:
+        connection.execute(
+            text("INSERT INTO extraction_inputs (extraction_id, content) VALUES (:id, :content)"),
+            {"id": extraction_id.hex, "content": UPLOAD},
+        )
+
+
+def set_status(database: Database, extraction_id: UUID, status: str) -> None:
+    with database.engine.begin() as connection:
+        connection.execute(
+            text("UPDATE extractions SET status = :status WHERE id = :id"), {"status": status, "id": extraction_id.hex}
+        )
+
+
+def set_attempts(database: Database, extraction_id: UUID, attempts: int) -> None:
+    with database.engine.begin() as connection:
+        connection.execute(
+            text("UPDATE extractions SET attempts = :attempts WHERE id = :id"),
+            {"attempts": attempts, "id": extraction_id.hex},
+        )
+
+
+def extraction_sql(database: Database) -> str:
+    with database.engine.connect() as connection:
+        sql: str = connection.execute(
+            text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'extractions'")
+        ).scalar_one()
+    return sql
+
+
+def extraction_columns(database: Database) -> set[str]:
+    return {column["name"] for column in inspect(database.engine).get_columns("extractions")}
+
+
+def at_0002_with_a_waiting_job(url: str, database: Database) -> UUID:
+    """A database at 0002 holding a pending extraction with its upload; returns the extraction's id."""
+    migrate(url, "0002")
+    job = UUID(int=21)
+    insert_extraction(database, job, UUID(int=1), "2026-03-01 09:00:00.000000")
+    insert_upload(database, job)
+    return job
+
+
+def test_upgrading_to_0003_keeps_the_rows_and_uploads_of_0002_with_no_file_name(url: str, database: Database) -> None:
+    job = at_0002_with_a_waiting_job(url, database)
+
+    migrate(url, "0003")
+
+    repository = SqliteExtractionRepository(database)
+    found = repository.get(job)
+    assert found is not None
+    assert (found.status, found.filename) == (ExtractionStatus.PENDING, None)
+    assert repository.read_input(job) == UPLOAD  # the rebuild's cascade did not delete it
+
+
+def test_after_0003_cancelled_is_accepted_and_an_unknown_status_is_refused(url: str, database: Database) -> None:
+    job = at_0002_with_a_waiting_job(url, database)
+    migrate(url, "0003")
+
+    set_status(database, job, "cancelled")
+
+    with pytest.raises(IntegrityError, match="ck_extractions_status_known"):
+        set_status(database, job, "bogus")
+    with pytest.raises(IntegrityError, match="ck_extractions_attempts_not_negative"):
+        set_attempts(database, job, -1)
+
+
+def test_0003_keeps_the_indexes_and_the_cascade_of_the_uploads(url: str, database: Database) -> None:
+    job = at_0002_with_a_waiting_job(url, database)
+    migrate(url, "0003")
+
+    with database.engine.begin() as connection:
+        connection.execute(text("DELETE FROM extractions WHERE id = :id"), {"id": job.hex})
+
+    assert SqliteExtractionRepository(database).read_input(job) is None
+    assert {index["name"] for index in inspect(database.engine).get_indexes("extractions")} == {
+        "ix_extractions_status_created_at_id",
+        "ix_extractions_finished_at",
+    }
+    assert extraction_sql(database).count("CHECK") == 2
+
+
+def test_the_check_of_0003_is_the_one_the_model_declares(url: str, database: Database) -> None:
+    upgrade_to_head(url)
+
+    declared = next(
+        constraint
+        for constraint in Base.metadata.tables[ExtractionRow.__tablename__].constraints
+        if isinstance(constraint, CheckConstraint) and constraint.name == "ck_extractions_status_known"
+    )
+    assert f"CONSTRAINT ck_extractions_status_known CHECK ({declared.sqltext})" in extraction_sql(database)
+
+
+def test_downgrading_0003_turns_a_cancelled_extraction_into_failed_as_interrupted(url: str, database: Database) -> None:
+    job = at_0002_with_a_waiting_job(url, database)
+    cancelled, completed = UUID(int=22), UUID(int=23)
+    insert_extraction(database, cancelled, UUID(int=1), "2026-03-01 10:00:00.000000")
+    insert_extraction(database, completed, UUID(int=1), "2026-03-01 11:00:00.000000")
+    migrate(url, "0003")
+    set_status(database, cancelled, "cancelled")
+    set_status(database, completed, "completed")
+
+    migrate(url, "0002", down=True)
+
+    assert current_revision(database.engine) == "0002"
+    assert "filename" not in extraction_columns(database)
+    with database.engine.connect() as connection:
+        rows = connection.execute(
+            text("SELECT id, status, error_reason, error_message FROM extractions ORDER BY id")
+        ).all()
+        upload = connection.execute(text("SELECT content FROM extraction_inputs")).scalar_one()
+    assert [tuple(row[1:]) for row in rows] == [
+        ("pending", None, None),
+        ("failed", "interrupted", FAILURE_MESSAGES[FailureReason.INTERRUPTED]),
+        ("completed", None, None),
+    ]
+    assert upload == UPLOAD
+    with pytest.raises(IntegrityError, match="ck_extractions_status_known"):
+        set_status(database, job, "cancelled")

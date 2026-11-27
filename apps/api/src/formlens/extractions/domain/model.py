@@ -1,4 +1,4 @@
-"""The extraction and its life: pending, running, then completed or failed.
+"""The extraction and its life: pending, running, then completed, failed or cancelled.
 
 Each transition returns a new frozen object and refuses a move the state does not allow, so a rule such as
 "a job that timed out cannot complete" is written once, here, and the repository only has to make the same
@@ -11,7 +11,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from formlens.extractions.domain.exceptions import InvalidTransition
+from formlens.extractions.domain.exceptions import ExtractionNotCancellable, InvalidTransition
 
 
 class ExtractionStatus(StrEnum):
@@ -21,6 +21,7 @@ class ExtractionStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class FailureReason(StrEnum):
@@ -51,6 +52,29 @@ FAILURE_MESSAGES: dict[FailureReason, str] = {
 TERMINAL_REASONS: frozenset[FailureReason] = frozenset(
     {FailureReason.INVALID_FILE, FailureReason.TIMED_OUT, FailureReason.DOCUMENT_TOO_LONG, FailureReason.INTERRUPTED}
 )
+
+
+# The longest file name an extraction keeps; a longer one is cut.
+MAX_FILENAME_LENGTH = 255
+
+# The characters a kept file name loses, as a `str.translate` table: every Unicode control character (category Cc),
+# that is the C0 controls (below U+0020), DEL (U+007F) and the C1 controls (U+0080 to U+009F).
+_CONTROL_CHARACTERS = dict.fromkeys([*range(0x20), *range(0x7F, 0xA0)])
+
+
+def upload_filename(raw: str | None) -> str | None:
+    r"""Return the name a client gave its upload as it is kept: the last path part, trimmed, at most 255 characters.
+
+    Control characters (Unicode category Cc: below U+0020 and U+007F to U+009F) are removed first, so a NUL, tab
+    or newline never reaches the database or a response. A browser may send a whole path
+    (`C:\fakepath\invoice.pdf`), so the name is cut at the last `/` or `\`. A name that is empty once its control
+    characters, path and spaces are gone is no name: `None`.
+    """
+    if raw is None:
+        return None
+    visible = raw.translate(_CONTROL_CHARACTERS)
+    name = visible.replace("\\", "/").rsplit("/", 1)[-1].strip()[:MAX_FILENAME_LENGTH]
+    return name or None
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,7 +111,8 @@ class Extraction:
     """One document read against one template.
 
     `attempts` counts the times a worker took the job, at the moment it took it. `result` holds one key per
-    field of the template, `null` where the form shows nothing.
+    field of the template, `null` where the form shows nothing. `filename` is the name the client gave the upload,
+    `None` when it gave none or the extraction is older than the name being kept.
     """
 
     id: UUID
@@ -99,11 +124,21 @@ class Extraction:
     finished_at: datetime | None = None
     result: dict[str, Any] | None = None
     error: ExtractionError | None = None
+    filename: str | None = None
 
     @classmethod
-    def new(cls, extraction_id: UUID, template: TemplateSnapshot, now: datetime) -> Extraction:
-        """Return a job that waits for a worker."""
-        return cls(id=extraction_id, template=template, status=ExtractionStatus.PENDING, attempts=0, created_at=now)
+    def new(
+        cls, extraction_id: UUID, template: TemplateSnapshot, now: datetime, *, filename: str | None = None
+    ) -> Extraction:
+        """Return a job that waits for a worker; `filename` is kept as `upload_filename` makes it."""
+        return cls(
+            id=extraction_id,
+            template=template,
+            status=ExtractionStatus.PENDING,
+            attempts=0,
+            created_at=now,
+            filename=upload_filename(filename),
+        )
 
     def _require(self, status: ExtractionStatus, move: str) -> None:
         if self.status is not status:
@@ -112,8 +147,8 @@ class Extraction:
 
     @property
     def is_finished(self) -> bool:
-        """Tell whether the extraction reached an end: completed or failed."""
-        return self.status in {ExtractionStatus.COMPLETED, ExtractionStatus.FAILED}
+        """Tell whether the extraction reached an end: completed, failed or cancelled."""
+        return self.status in {ExtractionStatus.COMPLETED, ExtractionStatus.FAILED, ExtractionStatus.CANCELLED}
 
     def claim(self, now: datetime) -> Extraction:
         """A worker takes the job; the attempt is counted now, so a crash in the middle still uses it up."""
@@ -147,6 +182,18 @@ class Extraction:
         if self.attempts < max_attempts:
             return replace(self, status=ExtractionStatus.PENDING, started_at=None)
         return self.fail(FailureReason.INTERRUPTED, now)
+
+    def cancel(self, now: datetime) -> Extraction:
+        """A client stops the job: only one that waits or runs can be stopped, and it never gets a result.
+
+        A worker that is reading it is not interrupted; its result is dropped because the job is no longer running.
+
+        Raises:
+            ExtractionNotCancellable: The extraction already ended.
+        """
+        if self.is_finished:
+            raise ExtractionNotCancellable(self.id, self.status.value)
+        return replace(self, status=ExtractionStatus.CANCELLED, finished_at=now)
 
     def is_expired(self, now: datetime, ttl: timedelta) -> bool:
         """Tell whether a finished extraction is older than its time to live; one that is not finished never is."""

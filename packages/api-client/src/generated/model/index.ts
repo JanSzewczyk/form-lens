@@ -14,6 +14,7 @@
 export * from './bodyCreateExtraction';
 export * from './bodyParseDocument';
 export * from './extractionErrorResponse';
+export * from './extractionFieldResponse';
 export * from './extractionPage';
 export * from './extractionResponse';
 export * from './extractionResponseResult';

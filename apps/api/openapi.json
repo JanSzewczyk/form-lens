@@ -66,6 +66,42 @@
         "title": "ExtractionErrorResponse",
         "type": "object"
       },
+      "ExtractionFieldResponse": {
+        "description": "One field of the template as it was when the document was submitted.",
+        "properties": {
+          "name": {
+            "description": "The key of the field in `result`.",
+            "examples": [
+              "invoice_number"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "description": "Whether the template marks the field as required.",
+            "examples": [
+              true
+            ],
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "description": "The type of the field in the template.",
+            "examples": [
+              "text"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "required"
+        ],
+        "title": "ExtractionFieldResponse",
+        "type": "object"
+      },
       "ExtractionPage": {
         "description": "One page of extractions.",
         "properties": {
@@ -143,6 +179,38 @@
             ],
             "description": "Present when `status` is `failed`."
           },
+          "fields": {
+            "description": "The fields of the template as they were when the document was submitted, in template order; a later edit or delete of the template does not change them.",
+            "examples": [
+              [
+                {
+                  "name": "invoice_number",
+                  "required": true,
+                  "type": "text"
+                }
+              ]
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ExtractionFieldResponse"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The name the client gave the uploaded file, without control characters or any path, at most 255 characters. `null` when it gave none or the extraction was submitted before file names were kept.",
+            "examples": [
+              "invoice_118_2026.pdf"
+            ],
+            "title": "Filename"
+          },
           "finished_at": {
             "anyOf": [
               {
@@ -153,7 +221,7 @@
                 "type": "null"
               }
             ],
-            "description": "When the extraction ended (UTC). The result is kept for a limited time after this.",
+            "description": "When the extraction ended or was cancelled (UTC). The result is kept for a limited time after this.",
             "title": "Finished At"
           },
           "id": {
@@ -209,7 +277,7 @@
           },
           "status": {
             "$ref": "#/components/schemas/ExtractionStatus",
-            "description": "`pending` waits for the worker, `running` is being read, `completed` has a `result`, `failed` has an `error`.",
+            "description": "`pending` waits for the worker, `running` is being read, `completed` has a `result`, `failed` has an `error`, `cancelled` was stopped by a client and never gets a result.",
             "examples": [
               "pending"
             ]
@@ -221,6 +289,14 @@
             ],
             "format": "uuid",
             "title": "Template Id",
+            "type": "string"
+          },
+          "template_name": {
+            "description": "The name of the template as it was when the document was submitted.",
+            "examples": [
+              "Invoice"
+            ],
+            "title": "Template Name",
             "type": "string"
           },
           "template_version": {
@@ -237,6 +313,9 @@
           "status",
           "template_id",
           "template_version",
+          "template_name",
+          "fields",
+          "filename",
           "missing_required",
           "attempts",
           "created_at"
@@ -250,7 +329,8 @@
           "pending",
           "running",
           "completed",
-          "failed"
+          "failed",
+          "cancelled"
         ],
         "title": "ExtractionStatus",
         "type": "string"
@@ -1173,7 +1253,7 @@
         ]
       },
       "post": {
-        "description": "Queue a document to be read against a template.\n\nSend the file as multipart form data in the `file` field, with the `template_id` field. The answer comes\nat once, with status 202 and a `Location`; the document is read later. The file is refused at once when it\nis empty, too large or not a PDF, PNG, JPEG or TIFF. A full queue answers 503 with a `Retry-After` header.",
+        "description": "Queue a document to be read against a template.\n\nSend the file as multipart form data in the `file` field, with the `template_id` field. The answer comes\nat once, with status 202 and a `Location`; the document is read later. The file is refused at once when it\nis empty, too large or not a PDF, PNG, JPEG or TIFF. A full queue answers 503 with a `Retry-After` header.\nThe file's name is kept as `filename`, without control characters or any path the browser sent, and cut\nto 255 characters.",
         "operationId": "create_extraction",
         "requestBody": {
           "content": {
@@ -1194,7 +1274,7 @@
                 }
               }
             },
-            "description": "The document is queued. Poll the `Location` until `status` is `completed` or `failed`.",
+            "description": "The document is queued. Poll the `Location` until `status` is `completed`, `failed` or `cancelled`.",
             "headers": {
               "Location": {
                 "description": "Where to read the extraction.",
@@ -1287,7 +1367,7 @@
     },
     "/v1/extractions/{extraction_id}": {
       "get": {
-        "description": "Return an extraction.\n\nWhile `status` is `pending` or `running`, ask again. A `completed` extraction has a `result` with one\nkey per field of the template (`null` where the document shows nothing) and the required fields that\ncame back `null` under `missing_required`. A `failed` one has an `error`. A result is kept for a limited\ntime after it ends, then the extraction is gone.",
+        "description": "Return an extraction.\n\nWhile `status` is `pending` or `running`, ask again. A `completed` extraction has a `result` with one\nkey per field of the template (`null` where the document shows nothing) and the required fields that\ncame back `null` under `missing_required`. A `failed` one has an `error`; a `cancelled` one has neither. A\nresult is kept for a limited time after it ends, then the extraction is gone.",
         "operationId": "get_extraction",
         "parameters": [
           {
@@ -1336,6 +1416,72 @@
           }
         },
         "summary": "Get Extraction",
+        "tags": [
+          "extractions"
+        ]
+      }
+    },
+    "/v1/extractions/{extraction_id}/cancel": {
+      "post": {
+        "description": "Cancel a pending or running extraction.\n\nThe answer is the extraction with `status` `cancelled` and `finished_at` set; it never gets a `result`. A\n`pending` one is never read. A `running` one may still be read to the end on the server, but its result is\ndropped. One that already ended is refused with 409 and stays as it was.",
+        "operationId": "cancel_extraction",
+        "parameters": [
+          {
+            "description": "Identifier of the extraction.",
+            "in": "path",
+            "name": "extraction_id",
+            "required": true,
+            "schema": {
+              "description": "Identifier of the extraction.",
+              "format": "uuid",
+              "title": "Extraction Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtractionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "No extraction has this id, or its result expired (`extraction-not-found`)."
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "The extraction already completed, failed or was cancelled; nothing changed (`extraction-not-cancellable`)."
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "`extraction_id` is not a UUID (`validation-error`)."
+          }
+        },
+        "summary": "Cancel Extraction",
         "tags": [
           "extractions"
         ]

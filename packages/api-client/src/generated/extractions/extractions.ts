@@ -140,6 +140,8 @@ export const getCreateExtractionUrl = () => {
  * Send the file as multipart form data in the `file` field, with the `template_id` field. The answer comes
  * at once, with status 202 and a `Location`; the document is read later. The file is refused at once when it
  * is empty, too large or not a PDF, PNG, JPEG or TIFF. A full queue answers 503 with a `Retry-After` header.
+ * The file's name is kept as `filename`, without control characters or any path the browser sent, and cut
+ * to 255 characters.
  * @summary Create Extraction
  */
 export const createExtraction = async (bodyCreateExtraction: BodyCreateExtraction, options?: Parameters<typeof customFetch>[1]): Promise<createExtractionResponse> => {
@@ -194,8 +196,8 @@ export const getGetExtractionUrl = (extractionId: string,) => {
  *
  * While `status` is `pending` or `running`, ask again. A `completed` extraction has a `result` with one
  * key per field of the template (`null` where the document shows nothing) and the required fields that
- * came back `null` under `missing_required`. A `failed` one has an `error`. A result is kept for a limited
- * time after it ends, then the extraction is gone.
+ * came back `null` under `missing_required`. A `failed` one has an `error`; a `cancelled` one has neither. A
+ * result is kept for a limited time after it ends, then the extraction is gone.
  * @summary Get Extraction
  */
 export const getExtraction = async (extractionId: string, options?: Parameters<typeof customFetch>[1]): Promise<getExtractionResponse> => {
@@ -204,6 +206,63 @@ export const getExtraction = async (extractionId: string, options?: Parameters<t
   {
     ...options,
     method: 'GET'
+
+
+  }
+);}
+
+
+export type cancelExtractionResponse200 = {
+  data: ExtractionResponse
+  status: 200
+}
+
+export type cancelExtractionResponse404 = {
+  data: ProblemDetail
+  status: 404
+}
+
+export type cancelExtractionResponse409 = {
+  data: ProblemDetail
+  status: 409
+}
+
+export type cancelExtractionResponse422 = {
+  data: ProblemDetail
+  status: 422
+}
+
+export type cancelExtractionResponseSuccess = (cancelExtractionResponse200) & {
+  headers: Headers;
+};
+export type cancelExtractionResponseError = (cancelExtractionResponse404 | cancelExtractionResponse409 | cancelExtractionResponse422) & {
+  headers: Headers;
+};
+
+export type cancelExtractionResponse = (cancelExtractionResponseSuccess | cancelExtractionResponseError)
+
+export const getCancelExtractionUrl = (extractionId: string,) => {
+
+
+
+
+  return `/v1/extractions/${extractionId}/cancel`
+}
+
+/**
+ * Cancel a pending or running extraction.
+ *
+ * The answer is the extraction with `status` `cancelled` and `finished_at` set; it never gets a `result`. A
+ * `pending` one is never read. A `running` one may still be read to the end on the server, but its result is
+ * dropped. One that already ended is refused with 409 and stays as it was.
+ * @summary Cancel Extraction
+ */
+export const cancelExtraction = async (extractionId: string, options?: Parameters<typeof customFetch>[1]): Promise<cancelExtractionResponse> => {
+
+  return customFetch<cancelExtractionResponse>(getCancelExtractionUrl(extractionId),
+  {
+    ...options,
+    method: 'POST'
 
 
   }

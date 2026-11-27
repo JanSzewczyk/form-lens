@@ -6,6 +6,7 @@ An upload the service refuses is the same problem as on the parse endpoint, so t
 from typing import Final
 
 from formlens.extractions.domain.exceptions import (
+    ExtractionNotCancellable,
     ExtractionNotFound,
     QueueFull,
     TemplateMissing,
@@ -18,10 +19,12 @@ from formlens.problems import ProblemType
 from formlens.templates.errors import TEMPLATE_NOT_FOUND
 
 EXTRACTION_NOT_FOUND: Final = ProblemType("extraction-not-found", "Extraction not found", 404)
+EXTRACTION_NOT_CANCELLABLE: Final = ProblemType("extraction-not-cancellable", "Extraction not cancellable", 409)
 QUEUE_FULL: Final = ProblemType("queue-full", "Queue full", 503)
 
 ERRORS: Final[dict[type[Exception], ProblemType]] = {
     ExtractionNotFound: EXTRACTION_NOT_FOUND,
+    ExtractionNotCancellable: EXTRACTION_NOT_CANCELLABLE,
     QueueFull: QUEUE_FULL,
     TemplateMissing: TEMPLATE_NOT_FOUND,
     UploadEmpty: INVALID_FILE,

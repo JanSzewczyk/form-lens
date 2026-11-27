@@ -20,8 +20,9 @@ export const env = createEnv({
     /** Where the FormLens API listens (apps/api). */
     FORMLENS_API_URL: z.url().default("http://localhost:8000"),
     /**
-     * Largest document the Studio accepts for upload, in megabytes. `next.config.ts` parses it with the same schema, for
-     * the request body limits, so a change needs a restart.
+     * Largest document the Studio accepts for upload, in megabytes. The request body limit is fixed when the app is
+     * built (`next.config.ts`), so raising it needs a rebuild with the value set at build time; at runtime it can only
+     * lower the limit. Read the limit through `maxUploadMb`, never from here.
      */
     FORMLENS_MAX_UPLOAD_MB: z.coerce.number().int().positive().default(25),
     LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).optional().default("info"),
@@ -34,3 +35,27 @@ export const env = createEnv({
    */
   skipValidation: !!process.env.SKIP_ENV_VALIDATION
 });
+
+const DEFAULT_MAX_UPLOAD_MB = 25;
+
+const uploadLimitSchema = z.coerce.number().int().positive();
+
+/**
+ * The upload limit in MB: the runtime value, capped at the request body limit the app was built with. Each side may be a
+ * number, a string (when env validation is skipped) or missing; a missing or invalid side counts as the default 25 MB.
+ */
+export function capUploadLimitMb(runtime: unknown, build: unknown): number {
+  const runtimeMb = uploadLimitSchema.safeParse(runtime === "" ? undefined : runtime);
+  const buildMb = uploadLimitSchema.safeParse(build === "" ? undefined : build);
+  return Math.min(
+    runtimeMb.success ? runtimeMb.data : DEFAULT_MAX_UPLOAD_MB,
+    buildMb.success ? buildMb.data : DEFAULT_MAX_UPLOAD_MB
+  );
+}
+
+/**
+ * The upload limit every consumer uses (the UI hint and the action's file check). `next.config.ts` inlines
+ * `FORMLENS_BUILD_MAX_UPLOAD_MB` at build time, and only where the code spells `process.env.FORMLENS_BUILD_MAX_UPLOAD_MB`
+ * out; `createEnv` reads `process.env` dynamically and would not see it.
+ */
+export const maxUploadMb = capUploadLimitMb(env.FORMLENS_MAX_UPLOAD_MB, process.env.FORMLENS_BUILD_MAX_UPLOAD_MB);

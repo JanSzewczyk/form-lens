@@ -7,21 +7,33 @@ import { apiUrl, HttpResponse, http, problem, server } from "~/tests/unit/msw/se
 
 vi.mock("~/features/extractions/server/extraction-actions", () => ({ submitExtraction: vi.fn() }));
 vi.mock("~/lib/logger", async () => (await import("~/tests/unit/mock-logger")).loggerModule);
-vi.hoisted(() => {
-  vi.stubEnv("FORMLENS_MAX_UPLOAD_MB", "25");
+/** The real loader behind a spy, so a test can see that an id was never sent to the API. */
+vi.mock("~/features/templates/server/load-template", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/features/templates/server/load-template")>();
+  return { loadTemplate: vi.fn(actual.loadTemplate) };
 });
+/** The runtime value asks for 50 MB, but the build allowed 25 MB: the page offers 25 MB (AC12). */
+vi.hoisted(() => {
+  vi.stubEnv("FORMLENS_MAX_UPLOAD_MB", "50");
+  vi.stubEnv("FORMLENS_BUILD_MAX_UPLOAD_MB", "25");
+});
+
+import { loadTemplate } from "~/features/templates/server/load-template";
 
 import NewDocumentPage, { metadata } from "./page";
 
 const TEMPLATE_ID = "6f1c1b5e-0f0e-4b1e-9d36-3f0d8f9c2a10";
+/** The API creates its ids with `uuid.uuid7()`. */
+const UUID_V7 = "019a6f3e-8c2b-7d41-9a3e-5b2c1d0e4f6a";
 
-async function renderPage(query: Record<string, string>) {
+async function renderPage(query: Record<string, string | Array<string>>) {
   const element = await NewDocumentPage({ params: Promise.resolve({}), searchParams: Promise.resolve(query) } as never);
   return renderToStaticMarkup(element);
 }
 
 beforeEach(() => {
   resetLog();
+  vi.mocked(loadTemplate).mockClear();
 });
 
 describe("New document page", () => {
@@ -58,7 +70,7 @@ describe("New document page", () => {
     expect(html).toContain('value="invoice"');
   });
 
-  it("shows the Upload step with the chosen form and its fields (AC5, AC6)", async () => {
+  it("shows the Upload step with the chosen form, its fields and the build-time size limit (AC5, AC6, AC12)", async () => {
     const template = templateResponseBuilder.one({
       overrides: {
         fields: fieldSpecBuilder.many(8),
@@ -73,6 +85,7 @@ describe("New document page", () => {
     expect(html).toContain("VAT invoice");
     expect(html).toContain("8 fields to find");
     expect(html).toContain("Start analysis");
+    expect(html.replaceAll("<!-- -->", "")).toContain("max 25 MB");
     for (const field of template.fields) {
       expect(html).toContain(field.name);
     }
@@ -86,6 +99,7 @@ describe("New document page", () => {
     expect(html).toContain("Form not found");
     expect(html).toMatch(/<a[^>]*href="\/documents\/new"[^>]*>Choose form<\/a>/);
     expect(html).not.toContain("Start analysis");
+    expect(loadTemplate).toHaveBeenCalledWith(TEMPLATE_ID);
   });
 
   it("throws to the error page when the API is down on the Upload step", async () => {
@@ -126,13 +140,92 @@ describe("New document page", () => {
     expect(html).not.toContain("Page 99 of 2");
   });
 
-  it("says the form was not found for a template id the API cannot read (AC8)", async () => {
-    server.use(http.get(apiUrl("/v1/templates/not-an-id"), () => problem(422)));
+  it.each([["not-a-uuid"], ["../extractions"], ["..%2Fextractions"], [`${TEMPLATE_ID}/../../extractions`]])(
+    "says the form was not found for the id %s and never sends it to the API (AC8)",
+    async (templateId) => {
+      const html = await renderPage({ template: templateId });
 
-    const html = await renderPage({ template: "not-an-id" });
+      expect(html).toContain("Form not found");
+      expect(html).toMatch(/<a[^>]*href="\/documents\/new"[^>]*>Choose form<\/a>/);
+      expect(html).not.toContain("Start analysis");
+      expect(loadTemplate).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    ["a UUIDv7 as the API creates it", UUID_V7],
+    ["an upper-case UUID", UUID_V7.toUpperCase()]
+  ])("loads the form for %s (AC5, AC8)", async (_case, templateId) => {
+    const template = templateResponseBuilder.one({ overrides: { id: templateId, name: "VAT invoice" } });
+    server.use(http.get(apiUrl(`/v1/templates/${templateId}`), () => HttpResponse.json(template)));
+
+    const html = await renderPage({ template: templateId });
+
+    expect(loadTemplate).toHaveBeenCalledWith(templateId);
+    expect(html).toContain("Start analysis");
+    expect(html).not.toContain("Form not found");
+  });
+
+  it("trims the spaces around a UUID before loading the form (AC8)", async () => {
+    const template = templateResponseBuilder.one({ overrides: { id: TEMPLATE_ID, name: "VAT invoice" } });
+    server.use(http.get(apiUrl(`/v1/templates/${TEMPLATE_ID}`), () => HttpResponse.json(template)));
+
+    const html = await renderPage({ template: `  ${TEMPLATE_ID}\n` });
+
+    expect(loadTemplate).toHaveBeenCalledWith(TEMPLATE_ID);
+    expect(html).toContain("Start analysis");
+  });
+
+  it.each([[""], ["   "]])(
+    "shows Choose form for the empty template %j and loads no form (AC1, AC8)",
+    async (templateId) => {
+      const forms = templateResponseBuilder.many(2);
+      server.use(http.get(apiUrl("/v1/templates"), () => HttpResponse.json({ items: forms, total: forms.length })));
+
+      const html = await renderPage({ template: templateId });
+
+      expect(loadTemplate).not.toHaveBeenCalled();
+      expect(html).not.toContain("Form not found");
+      for (const form of forms) {
+        expect(html).toContain(`href="/documents/new?template=${form.id}"`);
+      }
+    }
+  );
+
+  it("reads only the first of repeated template values: a UUID first loads the form (AC8)", async () => {
+    const template = templateResponseBuilder.one({ overrides: { id: TEMPLATE_ID, name: "VAT invoice" } });
+    server.use(http.get(apiUrl(`/v1/templates/${TEMPLATE_ID}`), () => HttpResponse.json(template)));
+
+    const html = await renderPage({ template: [TEMPLATE_ID, "../extractions"] });
+
+    expect(loadTemplate).toHaveBeenCalledTimes(1);
+    expect(loadTemplate).toHaveBeenCalledWith(TEMPLATE_ID);
+    expect(html).toContain("Start analysis");
+  });
+
+  it("reads only the first of repeated template values: a path first is never sent (AC8)", async () => {
+    const html = await renderPage({ template: ["../extractions", TEMPLATE_ID] });
 
     expect(html).toContain("Form not found");
-    expect(html).not.toContain("Start analysis");
+    expect(loadTemplate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [`${TEMPLATE_ID}?limit=1`],
+    [`${TEMPLATE_ID}#x`],
+    [`${TEMPLATE_ID}\u0000`],
+    [`${TEMPLATE_ID} ${TEMPLATE_ID}`],
+    [`{${TEMPLATE_ID}}`],
+    [TEMPLATE_ID.replaceAll("-", "")],
+    ["6f1c1b5e-0f0e-4b1e-9d36-3f0d8f9c2a1z"],
+    [".."],
+    ["%2e%2e%2fextractions"],
+    ["․․/extractions"]
+  ])("says the form was not found for the id %j and never sends it to the API (AC8)", async (templateId) => {
+    const html = await renderPage({ template: templateId });
+
+    expect(html).toContain("Form not found");
+    expect(loadTemplate).not.toHaveBeenCalled();
   });
 });
 

@@ -14,9 +14,13 @@ const next = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({ redirect: next.redirect }));
 vi.mock("~/lib/logger", async () => (await import("~/tests/unit/mock-logger")).loggerModule);
-/** Environment validation is skipped in tests, so the schema's default limit does not apply; set before the import. */
+/**
+ * Environment validation is skipped in tests, so the schema's default limit does not apply; set before the import. The
+ * runtime value asks for 50 MB, but the build allowed 2 MB, so the limit is 2 MB (AC12).
+ */
 vi.hoisted(() => {
-  vi.stubEnv("FORMLENS_MAX_UPLOAD_MB", "2");
+  vi.stubEnv("FORMLENS_MAX_UPLOAD_MB", "50");
+  vi.stubEnv("FORMLENS_BUILD_MAX_UPLOAD_MB", "2");
 });
 
 import { cancelExtraction, submitExtraction } from "./extraction-actions";
@@ -195,7 +199,7 @@ describe("submitExtraction", () => {
     expect(received).toHaveLength(0);
   });
 
-  it("refuses a file over the Studio's limit without calling the API (AC12)", async () => {
+  it("refuses a file over the build-time limit without calling the API, though the runtime value is higher (AC12)", async () => {
     const received = apiAnswers(() => new HttpResponse(null, { status: 500 }));
 
     const result = await submitExtraction(TEMPLATE_ID, null, formWith(pdf("big.pdf", 2 * MB + 1)));

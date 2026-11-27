@@ -32,7 +32,8 @@ router = APIRouter(prefix=EXTRACTIONS_PATH, tags=["extractions"])
 
 def _accepted() -> dict[str, Any]:
     return {
-        "description": "The document is queued. Poll the `Location` until `status` is `completed` or `failed`.",
+        "description": "The document is queued. Poll the `Location` until `status` is `completed`, `failed` or "
+        "`cancelled`.",
         "headers": {
             "Location": {
                 "description": "Where to read the extraction.",
@@ -89,7 +90,8 @@ def create_extraction(
     Send the file as multipart form data in the `file` field, with the `template_id` field. The answer comes
     at once, with status 202 and a `Location`; the document is read later. The file is refused at once when it
     is empty, too large or not a PDF, PNG, JPEG or TIFF. A full queue answers 503 with a `Retry-After` header.
-    The file's name is kept as `filename`, without any path the browser sent and cut to 255 characters.
+    The file's name is kept as `filename`, without control characters or any path the browser sent, and cut
+    to 255 characters.
     """
     extraction = service.submit(content, template_id, filename=filename)
     response.headers["Location"] = f"{EXTRACTIONS_PATH}/{extraction.id}"

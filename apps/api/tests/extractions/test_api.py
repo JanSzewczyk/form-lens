@@ -56,6 +56,26 @@ def submit(
     )
 
 
+def submit_raw_filename(client: TestClient, template_id: str, filename: bytes) -> Any:
+    """Send the file name byte for byte: httpx percent-encodes control characters in a multipart file name."""
+    boundary = b"formlens-test-boundary"
+    body = b"".join(
+        [
+            b"--" + boundary + b"\r\n",
+            b'Content-Disposition: form-data; name="template_id"\r\n\r\n',
+            template_id.encode() + b"\r\n",
+            b"--" + boundary + b"\r\n",
+            b'Content-Disposition: form-data; name="file"; filename="' + filename + b'"\r\n',
+            b"Content-Type: application/pdf\r\n\r\n",
+            PDF + b"\r\n",
+            b"--" + boundary + b"--\r\n",
+        ]
+    )
+    return client.post(
+        URL, content=body, headers={"Content-Type": f"multipart/form-data; boundary={boundary.decode()}"}
+    )
+
+
 def processor(app: FastAPI) -> ExtractionProcessor:
     return app.state.extraction_processor  # type: ignore[no-any-return]  # set by the lifespan
 
@@ -498,6 +518,24 @@ def test_the_three_routes_are_in_the_spec_with_their_statuses(client: TestClient
     assert "Location" in post["responses"]["202"]["headers"]
     assert "Retry-After" in post["responses"]["503"]["headers"]
     assert sorted(get["responses"]) == ["200", "404", "422"]
+
+
+def test_the_202_description_names_every_status_a_poll_can_end_in(client: TestClient) -> None:
+    spec = client.app.openapi()  # type: ignore[attr-defined]  # the app of the client
+    description = spec["paths"]["/v1/extractions"]["post"]["responses"]["202"]["description"]
+
+    ends = set(ExtractionStatus) - {ExtractionStatus.PENDING, ExtractionStatus.RUNNING}
+
+    assert {status for status in ends if f"`{status}`" in description} == ends
+
+
+def test_the_fields_of_the_response_have_an_example_that_fits_their_schema(client: TestClient) -> None:
+    schemas = client.app.openapi()["components"]["schemas"]  # type: ignore[attr-defined]  # the app of the client
+    fields = schemas["ExtractionResponse"]["properties"]["fields"]
+    validator = Draft202012Validator({"type": "array", "items": schemas["ExtractionFieldResponse"]})
+
+    assert fields["examples"]
+    assert [list(validator.iter_errors(example)) for example in fields["examples"]] == [[]] * len(fields["examples"])
 
 
 def test_the_response_has_no_field_for_the_document_or_the_prompt(client: TestClient) -> None:
@@ -1442,6 +1480,29 @@ def test_the_file_name_is_returned_when_created_when_read_and_when_listed(client
 )
 def test_only_the_last_part_of_a_path_in_the_file_name_is_kept(client: TestClient, sent: str, kept: str | None) -> None:
     created = submit(client, make_template(client)["id"], filename=sent).json()
+
+    assert created["filename"] == kept
+    assert client.get(f"{URL}/{created['id']}").json()["filename"] == kept
+
+
+@pytest.mark.parametrize(
+    ("sent", "kept"),
+    [
+        pytest.param(b"a\x00b.pdf", "ab.pdf", id="nul-inside"),
+        pytest.param(b"\x00\x1f\x7f", None, id="only-control-characters"),
+        pytest.param(b"in\tvoice.pdf", "invoice.pdf", id="tab-inside"),
+        pytest.param(b"in\nvoice.pdf", "invoice.pdf", id="newline-inside"),
+        pytest.param(b"a\x7fb.pdf", "ab.pdf", id="del-inside"),
+        pytest.param(b"a\x1bb.pdf", "ab.pdf", id="escape-inside"),
+        pytest.param(b"dir/\x00invoice.pdf", "invoice.pdf", id="nul-between-the-path-and-the-name"),
+        pytest.param(b"\x00 \t", None, id="only-controls-and-a-space"),
+    ],
+)
+def test_control_characters_are_removed_from_the_file_name(client: TestClient, sent: bytes, kept: str | None) -> None:
+    response = submit_raw_filename(client, make_template(client)["id"], sent)
+    assert response.status_code == 202
+
+    created = response.json()
 
     assert created["filename"] == kept
     assert client.get(f"{URL}/{created['id']}").json()["filename"] == kept

@@ -30,7 +30,7 @@ export interface ExtractionResponse {
   error?: ExtractionErrorResponse | null;
   /** The fields of the template as they were when the document was submitted, in template order; a later edit or delete of the template does not change them. */
   fields: ExtractionFieldResponse[];
-  /** The name the client gave the uploaded file, without any path, at most 255 characters. `null` when it gave none or the extraction was submitted before file names were kept. */
+  /** The name the client gave the uploaded file, without control characters or any path, at most 255 characters. `null` when it gave none or the extraction was submitted before file names were kept. */
   filename: string | null;
   /** When the extraction ended or was cancelled (UTC). The result is kept for a limited time after this. */
   finished_at?: string | null;

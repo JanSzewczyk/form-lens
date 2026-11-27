@@ -140,7 +140,8 @@ export const getCreateExtractionUrl = () => {
  * Send the file as multipart form data in the `file` field, with the `template_id` field. The answer comes
  * at once, with status 202 and a `Location`; the document is read later. The file is refused at once when it
  * is empty, too large or not a PDF, PNG, JPEG or TIFF. A full queue answers 503 with a `Retry-After` header.
- * The file's name is kept as `filename`, without any path the browser sent and cut to 255 characters.
+ * The file's name is kept as `filename`, without control characters or any path the browser sent, and cut
+ * to 255 characters.
  * @summary Create Extraction
  */
 export const createExtraction = async (bodyCreateExtraction: BodyCreateExtraction, options?: Parameters<typeof customFetch>[1]): Promise<createExtractionResponse> => {

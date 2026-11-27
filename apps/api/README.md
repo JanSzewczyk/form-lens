@@ -56,7 +56,7 @@ curl -i -F "template_id=<id from the answer>" -F "file=@invoice.pdf" http://127.
 
 - **📄 Document parsing** — `POST /v1/documents/parse` runs Granite-Docling through Docling on this machine and returns `text`, `page_count`, `elapsed_ms` and `model`; the file type is read from its bytes, at most `MAX_CONCURRENCY` documents are read at once, and a busy service answers 503 with `Retry-After`
 - **🧩 Form templates** — `/v1/templates` creates, lists, reads, replaces and deletes the description of a form: fields of type `text`, `number`, `integer`, `boolean`, `date` or `choice`, with limits. Each template yields a JSON Schema (every field a required key that may be `null`), versions go up by one with every replacement, and a template that breaks a rule is a 422 `invalid-template`
-- **🔎 Field extraction** — `POST /v1/extractions` queues a document and answers 202 with a `Location`; one worker reads the text with Docling and asks a local Ollama model for the fields, and the answer is validated against the template's schema. `GET /v1/extractions` lists them newest first, filtered by `status` and `template_id`. The extraction keeps a copy of the template from the moment it was submitted
+- **🔎 Field extraction** — `POST /v1/extractions` queues a document and answers 202 with a `Location`; one worker reads the text with Docling and asks a local Ollama model for the fields, and the answer is validated against the template's schema. `GET /v1/extractions` lists them newest first, filtered by `status` and `template_id`. The extraction keeps a copy of the template (name, version and fields) from the moment it was submitted and the name of the uploaded file without its path. `POST /v1/extractions/{extraction_id}/cancel` stops a `pending` or `running` extraction; one that already ended is a 409 `extraction-not-cancellable`
 - **📥 A queue that says no** — at most `QUEUE_MAX_PENDING` extractions wait; one more is a 503 `queue-full` with `Retry-After`. A job runs at most `JOB_TIMEOUT_SECONDS`, is retried while attempts remain, and one that a restart interrupted is run again
 - **🩺 Health and readiness** — `GET /health` for liveness; `GET /health/ready` runs every registered check and answers a 503 problem that names the checks that failed
 - **🔧 Typed settings** — pydantic-settings reads the environment and `.env`, and the service refuses to start on an invalid value
@@ -344,7 +344,8 @@ nothing here measures the container's backend, so the constant stays.
 | `DELETE` | `/v1/templates/{template_id}` | Delete a template (`delete_template`): 204; extractions already submitted keep their copy |
 | `POST` | `/v1/extractions` | Queue a document (`create_extraction`): multipart `file` and the form field `template_id`; **202** with a `Location` header and the extraction as `pending` |
 | `GET` | `/v1/extractions` | List extractions (`list_extractions`): newest first, with `limit` and `offset`; `status` (repeatable, any of them) and `template_id` (both must match) narrow it; `total` counts every match; a result past its time to live is not listed |
-| `GET` | `/v1/extractions/{extraction_id}` | Read an extraction (`get_extraction`): `status`, `result`, `error`, `missing_required`, the template id and version, timestamps |
+| `GET` | `/v1/extractions/{extraction_id}` | Read an extraction (`get_extraction`): `status`, `result`, `error`, `missing_required`, `filename`, the template id, version, `template_name` and `fields` as submitted, timestamps |
+| `POST` | `/v1/extractions/{extraction_id}/cancel` | Cancel an extraction (`cancel_extraction`): 200 with the extraction as `cancelled` when it was `pending` or `running`; 404, 409 when it already ended, 422 |
 
 The spec is generated from the app into `openapi.json` by `make openapi` and committed; never edit
 it by hand. `make check` fails when it is out of date, and `make api-check` lints it, compares it
@@ -382,8 +383,8 @@ on text the client does not control, and Python's `re` can take minutes on `(a+)
 be stopped and would block the queue. The pattern is searched anywhere in the value unless it is anchored, as in
 JSON Schema.
 
-An **extraction** is the flow `POST /v1/extractions` (202, `Location`) then `GET` until `status` is `completed` or
-`failed`:
+An **extraction** is the flow `POST /v1/extractions` (202, `Location`) then `GET` until `status` is `completed`,
+`failed` or `cancelled`:
 
 | `status` | Meaning |
 | --- | --- |
@@ -391,12 +392,13 @@ An **extraction** is the flow `POST /v1/extractions` (202, `Location`) then `GET
 | `running` | The worker took it (`attempts` counts the times) |
 | `completed` | `result` has one key per field of the template, `null` where the document does not show a value |
 | `failed` | `error` has a `reason` (`invalid_file`, `parse_failed`, `llm_unavailable`, `invalid_output`, `timed_out`, `interrupted`, `document_too_long`) and a fixed `message` |
+| `cancelled` | A client cancelled it while it was `pending` or `running`; no `result` and no `error`. A running job may still be read on the server, but its result is dropped |
 
 A `null` in a required field is **not** a failure: the result is delivered and `missing_required` lists the field.
 The extraction keeps a copy of the template (`template_version`) from the moment it was submitted, so a later edit
 or delete changes nothing. A finished extraction is kept for `RESULT_TTL_HOURS`, then it is a 404
 `extraction-not-found`. The template routes refuse a JSON body over `MAX_JSON_BODY_KB` with 413 `body-too-large`, before they read it. `POST /v1/extractions` answers 400 (an empty file only: a file with a valid signature that cannot be read is queued, and the extraction ends `failed` with the reason `invalid_file`), 404 (`template-not-found`), 413, 415, 422
-and 503 `queue-full` with `Retry-After`; the document and the values never appear in a log line.
+and 503 `queue-full` with `Retry-After`; the document and the values never appear in a log line. `POST /v1/extractions/{extraction_id}/cancel` answers 404 `extraction-not-found` (unknown id, or a finished extraction past `RESULT_TTL_HOURS`), 409 `extraction-not-cancellable` (it already completed, failed or was cancelled; nothing changes) and 422 (`extraction_id` is not a UUID). A cancelled waiting job frees its place in the queue.
 
 Parsing answers with these errors (all Problem Details, see
 [docs/reference/problem-types.md](docs/reference/problem-types.md)): 400 `invalid-file` (empty, or a

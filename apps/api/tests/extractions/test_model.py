@@ -232,6 +232,10 @@ def test_a_cancelled_extraction_expires_a_time_to_live_after_it_was_cancelled() 
         pytest.param("a\x7fb.pdf", "ab.pdf", id="del-inside"),
         pytest.param(" \x00 ", None, id="spaces-around-a-nul"),
         pytest.param("dir/\x00", None, id="only-a-nul-after-the-path"),
+        pytest.param("dir/\x00invoice.pdf", "invoice.pdf", id="nul-between-the-path-and-the-name"),
+        pytest.param("dir\x00/invoice.pdf", "invoice.pdf", id="nul-before-the-separator"),
+        pytest.param("\x00 invoice.pdf \x7f", "invoice.pdf", id="spaces-left-once-the-controls-are-gone"),
+        pytest.param("\t \r\n \x0b\x0c", None, id="only-whitespace-controls-and-spaces"),
     ],
 )
 def test_only_the_last_part_of_a_path_is_kept_as_the_file_name(raw: str | None, kept: str | None) -> None:
@@ -248,6 +252,15 @@ def test_control_characters_are_removed_before_the_name_is_cut_to_255() -> None:
     raw = "a" * 300 + ".pdf"
 
     assert upload_filename("\x00" * 10 + raw) == raw[:255]
+
+
+@pytest.mark.parametrize(
+    "control",
+    [pytest.param("\x85", id="next-line-U+0085"), pytest.param("\x9b", id="control-sequence-introducer-U+009B")],
+)
+def test_c1_control_characters_are_removed_from_the_file_name(control: str) -> None:
+    """Stricter reading: the contract says "without control characters", and U+0080-U+009F are control characters."""
+    assert upload_filename(f"a{control}b.pdf") == "ab.pdf"
 
 
 def test_a_new_extraction_keeps_the_cleaned_file_name() -> None:

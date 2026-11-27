@@ -520,6 +520,24 @@ def test_the_three_routes_are_in_the_spec_with_their_statuses(client: TestClient
     assert sorted(get["responses"]) == ["200", "404", "422"]
 
 
+def test_the_202_description_names_every_status_a_poll_can_end_in(client: TestClient) -> None:
+    spec = client.app.openapi()  # type: ignore[attr-defined]  # the app of the client
+    description = spec["paths"]["/v1/extractions"]["post"]["responses"]["202"]["description"]
+
+    ends = set(ExtractionStatus) - {ExtractionStatus.PENDING, ExtractionStatus.RUNNING}
+
+    assert {status for status in ends if f"`{status}`" in description} == ends
+
+
+def test_the_fields_of_the_response_have_an_example_that_fits_their_schema(client: TestClient) -> None:
+    schemas = client.app.openapi()["components"]["schemas"]  # type: ignore[attr-defined]  # the app of the client
+    fields = schemas["ExtractionResponse"]["properties"]["fields"]
+    validator = Draft202012Validator({"type": "array", "items": schemas["ExtractionFieldResponse"]})
+
+    assert fields["examples"]
+    assert [list(validator.iter_errors(example)) for example in fields["examples"]] == [[]] * len(fields["examples"])
+
+
 def test_the_response_has_no_field_for_the_document_or_the_prompt(client: TestClient) -> None:
     schema = client.app.openapi()["components"]["schemas"]["ExtractionResponse"]  # type: ignore[attr-defined]
 
@@ -1476,6 +1494,8 @@ def test_only_the_last_part_of_a_path_in_the_file_name_is_kept(client: TestClien
         pytest.param(b"in\nvoice.pdf", "invoice.pdf", id="newline-inside"),
         pytest.param(b"a\x7fb.pdf", "ab.pdf", id="del-inside"),
         pytest.param(b"a\x1bb.pdf", "ab.pdf", id="escape-inside"),
+        pytest.param(b"dir/\x00invoice.pdf", "invoice.pdf", id="nul-between-the-path-and-the-name"),
+        pytest.param(b"\x00 \t", None, id="only-controls-and-a-space"),
     ],
 )
 def test_control_characters_are_removed_from_the_file_name(client: TestClient, sent: bytes, kept: str | None) -> None:

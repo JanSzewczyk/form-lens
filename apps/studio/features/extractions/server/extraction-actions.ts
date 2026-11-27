@@ -3,14 +3,20 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { env } from "~/data/env/server";
-import type { SubmitFailure } from "~/features/extractions/schemas/extraction";
+import {
+  CancelFailureKind,
+  type CancelResult,
+  extractionViewSchema,
+  type SubmitFailure
+} from "~/features/extractions/schemas/extraction";
+import { loadExtraction } from "~/features/extractions/server/load-extraction";
 import {
   mapExtractionProblem,
   mapExtractionUnreachable,
   mapInvalidFile
 } from "~/features/extractions/server/map-extraction-error";
 import { checkFile } from "~/features/extractions/utils/accepted-file";
-import { createExtraction } from "~/lib/formlens-api";
+import { cancelExtraction as cancelExtractionRequest, createExtraction } from "~/lib/formlens-api";
 import { createLogger } from "~/lib/logger";
 
 const log = createLogger({ module: "extractions-actions" });
@@ -110,4 +116,87 @@ export async function submitExtraction(
     .withMetadata({ extractionId: submitted.extractionId, operation: "submitExtraction", templateId })
     .info("Extraction created");
   redirect(`/jobs/${submitted.extractionId}`);
+}
+
+const CANCEL_TIMEOUT_MS = 10_000;
+
+const CANCEL_MESSAGE = {
+  finished: "The extraction ended before it could be cancelled.",
+  notFound: "This extraction no longer exists. Its result may have expired.",
+  unavailable: "The job could not be cancelled: the API is unavailable. Try again in a moment."
+} as const;
+
+const cancelNotFound: CancelResult = {
+  error: CANCEL_MESSAGE.notFound,
+  kind: CancelFailureKind.notFound,
+  success: false
+};
+
+const cancelUnavailable: CancelResult = {
+  error: CANCEL_MESSAGE.unavailable,
+  kind: CancelFailureKind.unavailable,
+  success: false
+};
+
+/** The cancel was refused because the extraction already ended: its final state, read again, is what the page shows. */
+async function finishedBeforeCancel(extractionId: string): Promise<CancelResult> {
+  const current = await loadExtraction(extractionId);
+  if (current.status === "found") {
+    return {
+      error: CANCEL_MESSAGE.finished,
+      extraction: current.extraction,
+      kind: CancelFailureKind.finished,
+      success: false
+    };
+  }
+  return current.status === "not-found" ? cancelNotFound : cancelUnavailable;
+}
+
+/**
+ * Stops an unfinished extraction. A 409 means it ended first (the cancel raced completion), so the answer carries its
+ * final state instead. It never throws; the page shows the returned message as it is.
+ */
+export async function cancelExtraction(extractionId: string): Promise<CancelResult> {
+  if (!z.uuid().safeParse(extractionId).success) {
+    return cancelNotFound;
+  }
+
+  try {
+    const answer = await cancelExtractionRequest(extractionId, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(CANCEL_TIMEOUT_MS)
+    });
+    if (answer.status === 200) {
+      const parsed = extractionViewSchema.safeParse(answer.data);
+      if (parsed.success) {
+        log.withMetadata({ extractionId, operation: "cancelExtraction" }).info("Extraction cancelled");
+        return { extraction: parsed.data, success: true };
+      }
+      log
+        .withMetadata({ extractionId, operation: "cancelExtraction" })
+        .error("Cancelled extraction has an unexpected shape");
+      return cancelUnavailable;
+    }
+    /** The documented statuses are 404, 409 and 422, but a proxy or a crash can answer anything. */
+    const refused: { data: unknown; status: number } = answer;
+    const problem = loggedProblemSchema.safeParse(refused.data);
+    log
+      .withMetadata({
+        extractionId,
+        operation: "cancelExtraction",
+        problemType: problem.success ? problem.data.type : undefined,
+        statusCode: refused.status
+      })
+      .warn("Extraction cancel refused");
+    if (refused.status === 409) {
+      return await finishedBeforeCancel(extractionId);
+    }
+    return refused.status === 404 || refused.status === 422 ? cancelNotFound : cancelUnavailable;
+  } catch (error) {
+    log
+      .withError(error)
+      .withMetadata({ extractionId, operation: "cancelExtraction" })
+      .error("Extraction cancel failed");
+    return cancelUnavailable;
+  }
 }

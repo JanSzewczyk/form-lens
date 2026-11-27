@@ -57,12 +57,39 @@ export const FINAL_STATUSES: ReadonlyArray<ExtractionViewStatus> = [
  */
 export const extractionViewSchema = z.object({
   created_at: z.string(),
+  /** Present when the extraction failed; `message` is fixed text from the API and never holds text of the document. */
+  error: z.object({ message: z.string(), reason: z.string() }).nullish(),
   fields: z.array(z.object({ name: z.string(), required: z.boolean(), type: z.string() })),
   filename: z.string().nullable(),
   id: z.string(),
+  /** The required fields the document does not show; empty until the extraction completes. */
+  missing_required: z.array(z.string()).optional(),
+  /** One value per field, `null` where the document shows none; present once the extraction completed. */
+  result: z.record(z.string(), z.unknown()).nullish(),
   status: z.enum(ExtractionViewStatus),
   template_id: z.string(),
   template_name: z.string()
 });
 
 export type ExtractionView = z.infer<typeof extractionViewSchema>;
+
+export const CancelFailureKind = {
+  /** The extraction ended before the cancel reached it; `extraction` is its final state. */
+  finished: "finished",
+  /** The extraction no longer exists, for example its result expired. */
+  notFound: "not-found",
+  /** The API did not answer, or answered something unexpected. */
+  unavailable: "unavailable"
+} as const;
+
+export type CancelFailureKind = (typeof CancelFailureKind)[keyof typeof CancelFailureKind];
+
+/** What `cancelExtraction` returns: the cancelled extraction, or why it was not cancelled. */
+export type CancelResult =
+  | { success: true; extraction: ExtractionView }
+  | { success: false; kind: typeof CancelFailureKind.finished; error: string; extraction: ExtractionView }
+  | {
+      success: false;
+      kind: typeof CancelFailureKind.notFound | typeof CancelFailureKind.unavailable;
+      error: string;
+    };

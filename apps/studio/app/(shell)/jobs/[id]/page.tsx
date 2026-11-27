@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { ExtractionStatusView } from "~/features/extractions/components/extraction-status-view";
+import { cancelExtraction } from "~/features/extractions/server/extraction-actions";
 import { loadExtraction } from "~/features/extractions/server/load-extraction";
 
 /** The status comes from the API at request time; the build must not need the API. */
@@ -31,5 +32,5 @@ export default async function JobPage({ params }: PageProps<"/jobs/[id]">) {
   const { id } = await params;
   const { extraction } = await loadData(id);
 
-  return <ExtractionStatusView initial={extraction} />;
+  return <ExtractionStatusView initial={extraction} onCancelAction={cancelExtraction} />;
 }

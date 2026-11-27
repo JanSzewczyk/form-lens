@@ -1,6 +1,12 @@
-import { expect, fn, waitFor } from "storybook/test";
+import { type ExtractionResponse, FailureReason } from "@form-lens/api-client";
+import { expect, fn, screen, waitFor } from "storybook/test";
 import preview from "~/.storybook/preview";
-import { type ExtractionView, ExtractionViewStatus } from "~/features/extractions/schemas/extraction";
+import {
+  CancelFailureKind,
+  type CancelResult,
+  type ExtractionView,
+  ExtractionViewStatus
+} from "~/features/extractions/schemas/extraction";
 import { extractionResponseBuilder } from "~/features/extractions/utils/extraction.builder";
 
 import { ExtractionStatusView } from "./extraction-status-view";
@@ -12,7 +18,7 @@ const FIELDS: ExtractionView["fields"] = [
   { name: "total_gross", required: false, type: "number" }
 ];
 
-function viewWith(overrides: Partial<ExtractionView>): ExtractionView {
+function viewWith(overrides: Partial<ExtractionResponse>): ExtractionView {
   return extractionResponseBuilder.one({
     overrides: {
       fields: FIELDS,
@@ -42,11 +48,16 @@ function json(view: ExtractionView) {
   return () => Promise.resolve(Response.json(view));
 }
 
+const cancelMock = fn<(extractionId: string) => Promise<CancelResult>>();
+
 const meta = preview.meta({
-  args: { initial: PENDING },
+  args: { initial: PENDING, onCancelAction: cancelMock },
   beforeEach: () => {
     const realFetch = globalThis.fetch;
     fetchMock.mockReset();
+    cancelMock.mockReset();
+    // By default a cancel never answers; a story that cancels says what the action returns.
+    cancelMock.mockImplementation(() => new Promise<CancelResult>(() => undefined));
     // By default a check never answers, so a story shows exactly the state it was given.
     fetchMock.mockImplementation(() => new Promise<Response>(() => undefined));
     globalThis.fetch = fetchMock;
@@ -88,6 +99,168 @@ export const Running = meta.story({ args: { initial: viewWith({ status: Extracti
 Running.test("Shows Reading document as the current step (AC20)", async ({ canvas }) => {
   await expect(canvas.getByRole("tab", { current: "step" })).toHaveTextContent("Reading document");
   await expect(canvas.getByText("In progress")).toBeVisible();
+});
+
+Running.test("Shows Cancel job while the extraction is unfinished", async ({ canvas }) => {
+  await expect(canvas.getByRole("button", { name: "Cancel job" })).toBeVisible();
+});
+
+const COMPLETED = viewWith({
+  fields: [
+    { name: "invoice_number", required: true, type: "text" },
+    { name: "paid", required: false, type: "boolean" },
+    { name: "due_date", required: true, type: "date" }
+  ],
+  missing_required: ["due_date"],
+  result: { due_date: null, invoice_number: "FV/1/2026", paid: null },
+  status: ExtractionViewStatus.completed
+});
+
+export const Completed = meta.story({ args: { initial: COMPLETED } });
+
+Completed.test(
+  "Lists the results in form order with Not found and Missing required, and the stepper shows Done (AC24, AC25)",
+  async ({ canvas }) => {
+    const items = Array.from(canvas.getByRole("list", { name: "Results" }).querySelectorAll("li"));
+
+    await expect(items.map((item) => item.textContent)).toEqual([
+      "invoice_numberFV/1/2026",
+      "paidNot found",
+      "due_dateMissing required"
+    ]);
+    await expect(canvas.getByText("1 required field was not found.")).toBeVisible();
+    await expect(canvas.getAllByRole("tab").at(-1)).toHaveTextContent("Done");
+    await expect(canvas.getByText("Completed")).toBeVisible();
+  }
+);
+
+Completed.test("Shows no Cancel job and sends no checks (AC31)", async ({ canvas }) => {
+  await expect(canvas.queryByRole("button", { name: "Cancel job" })).not.toBeInTheDocument();
+  await expect(fetchMock).not.toHaveBeenCalled();
+});
+
+const FAILED = viewWith({
+  error: { message: "The document could not be parsed.", reason: FailureReason.parse_failed },
+  status: ExtractionViewStatus.failed
+});
+
+export const Failed = meta.story({ args: { initial: FAILED } });
+
+Failed.test(
+  "Shows the API's message and Try again with the same form, without Cancel job (AC26, AC31)",
+  async ({ canvas }) => {
+    await expect(canvas.getByText("The document could not be parsed.")).toBeVisible();
+    await expect(canvas.getByRole("link", { name: "Try again" })).toHaveAttribute(
+      "href",
+      `/documents/new?template=${FAILED.template_id}`
+    );
+    await expect(canvas.queryByRole("button", { name: "Cancel job" })).not.toBeInTheDocument();
+  }
+);
+
+export const Cancelled = meta.story({ args: { initial: viewWith({ status: ExtractionViewStatus.cancelled }) } });
+
+Cancelled.test("Shows the extraction as cancelled, without Cancel job (AC31)", async ({ canvas }) => {
+  await expect(canvas.getByText("The extraction was cancelled")).toBeVisible();
+  await expect(canvas.getAllByRole("tab").at(-1)).toHaveTextContent("Cancelled");
+  await expect(canvas.queryByRole("button", { name: "Cancel job" })).not.toBeInTheDocument();
+});
+
+export const CancelWhilePolling = meta.story({
+  args: { intervalMs: FAST_INTERVAL_MS },
+  beforeEach: () => {
+    answerChecksWith([json(PENDING)]);
+    cancelMock.mockImplementation((extractionId) =>
+      Promise.resolve({
+        extraction: viewWith({ id: extractionId, status: ExtractionViewStatus.cancelled }),
+        success: true
+      })
+    );
+  },
+  name: "Cancel while polling"
+});
+
+CancelWhilePolling.test(
+  "Confirming shows the extraction as cancelled and stops the checks (AC30)",
+  async ({ canvas, userEvent }) => {
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(1));
+
+    await userEvent.click(canvas.getByRole("button", { name: "Cancel job" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel the job" }));
+
+    await expect(await canvas.findByText("The extraction was cancelled")).toBeVisible();
+    await expect(cancelMock).toHaveBeenCalledOnce();
+    await expect(cancelMock).toHaveBeenCalledWith(PENDING.id);
+    await expect(canvas.queryByRole("button", { name: "Cancel job" })).not.toBeInTheDocument();
+    const callsWhenCancelled = fetchMock.mock.calls.length;
+    // Absence of checks can only be shown over a window: ten intervals after the cancel.
+    await new Promise((resolve) => setTimeout(resolve, FAST_INTERVAL_MS * 10));
+    await expect(fetchMock).toHaveBeenCalledTimes(callsWhenCancelled);
+  }
+);
+
+CancelWhilePolling.test("Dismissing the confirmation changes nothing (AC30)", async ({ canvas, userEvent }) => {
+  await userEvent.click(canvas.getByRole("button", { name: "Cancel job" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Keep running" }));
+
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+  await expect(cancelMock).not.toHaveBeenCalled();
+  await expect(canvas.getByText("Waiting in queue", { selector: "h2" })).toBeVisible();
+  await expect(canvas.getByRole("button", { name: "Cancel job" })).toBeVisible();
+  const calls = fetchMock.mock.calls.length;
+  await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(calls));
+});
+
+export const CancelAfterCompletion = meta.story({
+  beforeEach: () => {
+    cancelMock.mockImplementation(() =>
+      Promise.resolve({
+        error: "The extraction ended before it could be cancelled.",
+        extraction: COMPLETED,
+        kind: CancelFailureKind.finished,
+        success: false
+      })
+    );
+  },
+  name: "Cancel after completion"
+});
+
+CancelAfterCompletion.test(
+  "Shows the completed result when the cancel is refused because the extraction already ended (409)",
+  async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Cancel job" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel the job" }));
+
+    await expect(await canvas.findByText("The document has been read")).toBeVisible();
+    await expect(canvas.getByText("FV/1/2026")).toBeVisible();
+    await expect(canvas.getByText("The extraction ended before it could be cancelled.")).toBeVisible();
+    await expect(canvas.queryByRole("button", { name: "Cancel job" })).not.toBeInTheDocument();
+  }
+);
+
+export const CancelUnavailable = meta.story({
+  beforeEach: () => {
+    cancelMock.mockImplementation(() =>
+      Promise.resolve({
+        error: "The job could not be cancelled: the API is unavailable. Try again in a moment.",
+        kind: CancelFailureKind.unavailable,
+        success: false
+      })
+    );
+  },
+  name: "Cancel unavailable"
+});
+
+CancelUnavailable.test("Says the job could not be cancelled and keeps it running", async ({ canvas, userEvent }) => {
+  await userEvent.click(canvas.getByRole("button", { name: "Cancel job" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Cancel the job" }));
+
+  await expect(
+    await canvas.findByText("The job could not be cancelled: the API is unavailable. Try again in a moment.")
+  ).toBeVisible();
+  await expect(canvas.getByText("Waiting in queue", { selector: "h2" })).toBeVisible();
+  // The rest of the page is hidden from assistive technology until the dialog has finished closing.
+  await expect(await canvas.findByRole("button", { name: "Cancel job" })).toBeEnabled();
 });
 
 export const LiveUpdates = meta.story({

@@ -24,9 +24,12 @@ describe("loadExtraction", () => {
     await expect(loadExtraction(extraction.id)).resolves.toEqual({
       extraction: {
         created_at: extraction.created_at,
+        error: null,
         fields,
         filename: "invoice_118_2026.pdf",
         id: extraction.id,
+        missing_required: [],
+        result: null,
         status: extraction.status,
         template_id: extraction.template_id,
         template_name: "VAT invoice"

@@ -23,8 +23,10 @@ import { loadTemplate } from "~/features/templates/server/load-template";
 import NewDocumentPage, { metadata } from "./page";
 
 const TEMPLATE_ID = "6f1c1b5e-0f0e-4b1e-9d36-3f0d8f9c2a10";
+/** The API creates its ids with `uuid.uuid7()`. */
+const UUID_V7 = "019a6f3e-8c2b-7d41-9a3e-5b2c1d0e4f6a";
 
-async function renderPage(query: Record<string, string>) {
+async function renderPage(query: Record<string, string | Array<string>>) {
   const element = await NewDocumentPage({ params: Promise.resolve({}), searchParams: Promise.resolve(query) } as never);
   return renderToStaticMarkup(element);
 }
@@ -149,6 +151,82 @@ describe("New document page", () => {
       expect(loadTemplate).not.toHaveBeenCalled();
     }
   );
+
+  it.each([
+    ["a UUIDv7 as the API creates it", UUID_V7],
+    ["an upper-case UUID", UUID_V7.toUpperCase()]
+  ])("loads the form for %s (AC5, AC8)", async (_case, templateId) => {
+    const template = templateResponseBuilder.one({ overrides: { id: templateId, name: "VAT invoice" } });
+    server.use(http.get(apiUrl(`/v1/templates/${templateId}`), () => HttpResponse.json(template)));
+
+    const html = await renderPage({ template: templateId });
+
+    expect(loadTemplate).toHaveBeenCalledWith(templateId);
+    expect(html).toContain("Start analysis");
+    expect(html).not.toContain("Form not found");
+  });
+
+  it("trims the spaces around a UUID before loading the form (AC8)", async () => {
+    const template = templateResponseBuilder.one({ overrides: { id: TEMPLATE_ID, name: "VAT invoice" } });
+    server.use(http.get(apiUrl(`/v1/templates/${TEMPLATE_ID}`), () => HttpResponse.json(template)));
+
+    const html = await renderPage({ template: `  ${TEMPLATE_ID}\n` });
+
+    expect(loadTemplate).toHaveBeenCalledWith(TEMPLATE_ID);
+    expect(html).toContain("Start analysis");
+  });
+
+  it.each([[""], ["   "]])(
+    "shows Choose form for the empty template %j and loads no form (AC1, AC8)",
+    async (templateId) => {
+      const forms = templateResponseBuilder.many(2);
+      server.use(http.get(apiUrl("/v1/templates"), () => HttpResponse.json({ items: forms, total: forms.length })));
+
+      const html = await renderPage({ template: templateId });
+
+      expect(loadTemplate).not.toHaveBeenCalled();
+      expect(html).not.toContain("Form not found");
+      for (const form of forms) {
+        expect(html).toContain(`href="/documents/new?template=${form.id}"`);
+      }
+    }
+  );
+
+  it("reads only the first of repeated template values: a UUID first loads the form (AC8)", async () => {
+    const template = templateResponseBuilder.one({ overrides: { id: TEMPLATE_ID, name: "VAT invoice" } });
+    server.use(http.get(apiUrl(`/v1/templates/${TEMPLATE_ID}`), () => HttpResponse.json(template)));
+
+    const html = await renderPage({ template: [TEMPLATE_ID, "../extractions"] });
+
+    expect(loadTemplate).toHaveBeenCalledTimes(1);
+    expect(loadTemplate).toHaveBeenCalledWith(TEMPLATE_ID);
+    expect(html).toContain("Start analysis");
+  });
+
+  it("reads only the first of repeated template values: a path first is never sent (AC8)", async () => {
+    const html = await renderPage({ template: ["../extractions", TEMPLATE_ID] });
+
+    expect(html).toContain("Form not found");
+    expect(loadTemplate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [`${TEMPLATE_ID}?limit=1`],
+    [`${TEMPLATE_ID}#x`],
+    [`${TEMPLATE_ID}\u0000`],
+    [`${TEMPLATE_ID} ${TEMPLATE_ID}`],
+    [`{${TEMPLATE_ID}}`],
+    [TEMPLATE_ID.replaceAll("-", "")],
+    ["6f1c1b5e-0f0e-4b1e-9d36-3f0d8f9c2a1z"],
+    [".."],
+    ["%2e%2e%2fextractions"],
+    ["․․/extractions"]
+  ])("says the form was not found for the id %j and never sends it to the API (AC8)", async (templateId) => {
+    const html = await renderPage({ template: templateId });
+
+    expect(html).toContain("Form not found");
+    expect(loadTemplate).not.toHaveBeenCalled();
+  });
 });
 
 /** The API's list endpoint over `forms`, sliced by `offset` and `limit`; returns what each request asked for. */

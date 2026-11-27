@@ -63,3 +63,32 @@ PhoneWidth.test("Stacks the Fields to find card under the drop zone (AC35)", asy
 
   await expect(fieldsCardTop).toBeGreaterThanOrEqual(uploadColumnBottom);
 });
+
+PhoneWidth.test(
+  "Renders in a 375 px viewport and frame, so the scroll checks mean something (AC35)",
+  async ({ canvas }) => {
+    await expect(window.innerWidth).toBe(375);
+    await expect(canvas.getByTestId("phone").clientWidth).toBe(375);
+  }
+);
+
+PhoneWidth.test(
+  "Keeps every element inside the 375 px frame, with no content spilling out of its box (AC35)",
+  async ({ canvas }) => {
+    const phone = canvas.getByTestId("phone").getBoundingClientRect();
+    const outside = [...canvas.getByTestId("phone").querySelectorAll("*")]
+      .map((element) => ({ box: element.getBoundingClientRect(), element }))
+      .filter(
+        ({ element, box }) =>
+          box.width > 1 &&
+          (box.right > phone.right + 0.5 ||
+            box.left < phone.left - 0.5 ||
+            (element.clientWidth > 0 && element.scrollWidth > element.clientWidth + 1))
+      )
+      .map(
+        ({ element, box }) => `${element.tagName}.${element.className} ${Math.round(box.left)}-${Math.round(box.right)}`
+      );
+
+    await expect(outside).toEqual([]);
+  }
+);

@@ -5,10 +5,8 @@ import { z } from "zod";
 
 import { maxUploadMb } from "~/data/env/server";
 import { ChooseFormList } from "~/features/extractions/components/choose-form-list";
-import { FieldsToFindCard } from "~/features/extractions/components/fields-to-find-card";
 import { NewDocumentStep, NewDocumentStepper } from "~/features/extractions/components/new-document-stepper";
-import { SelectedFormItem } from "~/features/extractions/components/selected-form-item";
-import { UploadForm } from "~/features/extractions/components/upload-form";
+import { UploadStepLayout } from "~/features/extractions/components/upload-step-layout";
 import { submitExtraction } from "~/features/extractions/server/extraction-actions";
 import { loadTemplate } from "~/features/templates/server/load-template";
 import { loadTemplates } from "~/features/templates/server/load-templates";
@@ -96,15 +94,11 @@ export default async function NewDocumentPage({ searchParams }: PageProps<"/docu
           </EmptyContent>
         </Empty>
       ) : (
-        <div className="flex min-w-0 flex-wrap items-start gap-5">
-          <div className="flex min-w-0 flex-[999_1_520px] flex-col gap-5">
-            <SelectedFormItem template={data.template} />
-            <UploadForm maxMb={data.maxMb} onSubmitAction={submitExtraction.bind(null, data.template.id)} />
-          </div>
-          <div className="min-w-0 flex-[1_1_300px]">
-            <FieldsToFindCard template={data.template} />
-          </div>
-        </div>
+        <UploadStepLayout
+          maxMb={data.maxMb}
+          onSubmitAction={submitExtraction.bind(null, data.template.id)}
+          template={data.template}
+        />
       )}
     </>
   );

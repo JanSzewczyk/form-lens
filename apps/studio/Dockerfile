@@ -9,8 +9,12 @@ RUN npm ci
 FROM deps AS build
 COPY apps/studio apps/studio
 COPY packages/api-client packages/api-client
-# The server environment is read when the container starts, not when the image is built.
-ENV NEXT_TELEMETRY_DISABLED=1 SKIP_ENV_VALIDATION=true
+# The server environment is read when the container starts, not when the image is built, except the ceiling of the
+# upload limit: next.config.ts fixes the request body limit at build time from FORMLENS_MAX_UPLOAD_MB. To accept larger
+# documents, build with --build-arg FORMLENS_MAX_UPLOAD_MB=50 and also run the container with FORMLENS_MAX_UPLOAD_MB=50;
+# at runtime the value can only lower the ceiling (a higher one is capped, with a warning in the log).
+ARG FORMLENS_MAX_UPLOAD_MB=25
+ENV NEXT_TELEMETRY_DISABLED=1 SKIP_ENV_VALIDATION=true FORMLENS_MAX_UPLOAD_MB=$FORMLENS_MAX_UPLOAD_MB
 RUN npm run build -w @form-lens/studio
 
 FROM node:26-slim AS runtime

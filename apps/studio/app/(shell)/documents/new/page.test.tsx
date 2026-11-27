@@ -6,7 +6,12 @@ import { resetLog } from "~/tests/unit/mock-logger";
 import { apiUrl, HttpResponse, http, problem, server } from "~/tests/unit/msw/server";
 
 vi.mock("~/features/extractions/server/extraction-actions", () => ({ submitExtraction: vi.fn() }));
-vi.mock("~/lib/logger", async () => (await import("~/tests/unit/mock-logger")).loggerModule);
+/** Primed here: importing the env logs that the runtime limit was capped, before any `beforeEach` runs. */
+vi.mock("~/lib/logger", async () => {
+  const mockLogger = await import("~/tests/unit/mock-logger");
+  mockLogger.resetLog();
+  return mockLogger.loggerModule;
+});
 /** The real loader behind a spy, so a test can see that an id was never sent to the API. */
 vi.mock("~/features/templates/server/load-template", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/features/templates/server/load-template")>();

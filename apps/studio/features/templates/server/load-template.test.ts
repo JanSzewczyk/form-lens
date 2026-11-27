@@ -10,6 +10,18 @@ import { loadTemplate } from "./load-template";
 
 const ID = "6f1c1b5e-0f0e-4b1e-9d36-3f0d8f9c2a10";
 
+/** Answers every request with a 500 and records its URL, so a test can show that nothing was sent. */
+function recordApiRequests(): Array<string> {
+  const sent: Array<string> = [];
+  server.use(
+    http.all("*", ({ request }) => {
+      sent.push(request.url);
+      return problem(500);
+    })
+  );
+  return sent;
+}
+
 describe("loadTemplate", () => {
   beforeEach(() => {
     resetLog();
@@ -31,7 +43,26 @@ describe("loadTemplate", () => {
   it("reports an id the API cannot read as a template id (422) as not found (AC21)", async () => {
     server.use(http.get(apiUrl("/v1/templates/:id"), () => problem(422, { title: "Request validation failed" })));
 
-    await expect(loadTemplate("not-a-uuid")).resolves.toEqual({ status: "not-found" });
+    await expect(loadTemplate("44444444-4444-4444-8444-444444444444")).resolves.toEqual({ status: "not-found" });
+  });
+
+  it.each([["not-a-uuid"], ["../extractions"], ["..%2Fextractions"], [`${ID}/../../extractions`]])(
+    "reports the id %j as not found without sending it to the API",
+    async (id) => {
+      const sent = recordApiRequests();
+
+      await expect(loadTemplate(id)).resolves.toEqual({ status: "not-found" });
+      expect(sent).toEqual([]);
+    }
+  );
+
+  it("reports a 200 of an unexpected shape as unavailable", async () => {
+    server.use(http.get(apiUrl(`/v1/templates/${ID}`), () => HttpResponse.json({ id: ID, name: 7 })));
+
+    await expect(loadTemplate(ID)).resolves.toEqual({
+      reason: "The FormLens API answered with an unexpected template.",
+      status: "unavailable"
+    });
   });
 
   it("reports another status as unavailable", async () => {

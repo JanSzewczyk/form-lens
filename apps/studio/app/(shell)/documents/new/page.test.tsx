@@ -10,7 +10,7 @@ vi.mock("~/lib/logger", async () => (await import("~/tests/unit/mock-logger")).l
 /** The real loader behind a spy, so a test can see that an id was never sent to the API. */
 vi.mock("~/features/templates/server/load-template", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/features/templates/server/load-template")>();
-  return { loadTemplate: vi.fn(actual.loadTemplate) };
+  return { ...actual, loadTemplate: vi.fn(actual.loadTemplate) };
 });
 /** The runtime value asks for 50 MB, but the build allowed 25 MB: the page offers 25 MB (AC12). */
 vi.hoisted(() => {

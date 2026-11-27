@@ -42,6 +42,22 @@ describe("getResultRows", () => {
     expect(describeMissingRequired(rows)).toBe("1 required field was not found");
   });
 
+  it("marks a required field as Missing required when the result has no key for it at all (AC25)", () => {
+    const extraction = completed({
+      fields: [
+        { name: "invoice_number", required: true, type: "text" },
+        { name: "due_date", required: true, type: "date" }
+      ],
+      missing_required: ["due_date"],
+      result: { invoice_number: "FV/1/2026" }
+    });
+
+    const rows = getResultRows(extraction);
+
+    expect(rows.at(-1)).toEqual({ name: "due_date", state: ResultRowState.missingRequired, value: null });
+    expect(describeMissingRequired(rows)).toBe("1 required field was not found");
+  });
+
   it("follows the submitted form's fields, not the keys of the result (form edited after the submit)", () => {
     const fields = [
       { name: "issue_date", required: false, type: "date" },

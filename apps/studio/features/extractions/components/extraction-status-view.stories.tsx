@@ -94,7 +94,31 @@ Pending.test("Shows file · form, the submit time and the polling footer with th
   await expect(canvas.getByText(PENDING.id)).toBeVisible();
 });
 
+Pending.test("Shows Cancel job while the extraction waits in the queue (AC31)", async ({ canvas }) => {
+  await expect(canvas.getByRole("button", { name: "Cancel job" })).toBeEnabled();
+});
+
 export const Running = meta.story({ args: { initial: viewWith({ status: ExtractionViewStatus.running }) } });
+
+Running.test(
+  "Disables Cancel job while the confirmed cancel is on its way and sends it once (AC30)",
+  async ({ canvas, userEvent }) => {
+    // The cancel answers only when the test says so; it must answer before the test ends, since a pending async
+    // transition would hold later stories' transitions pending too.
+    const answer = Promise.withResolvers<CancelResult>();
+    cancelMock.mockImplementation(() => answer.promise);
+
+    await userEvent.click(canvas.getByRole("button", { name: "Cancel job" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel the job" }));
+
+    await waitFor(() => expect(canvas.getByRole("button", { name: /Cancel job/ })).toBeDisabled());
+    await expect(cancelMock).toHaveBeenCalledOnce();
+    await expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+
+    answer.resolve({ extraction: viewWith({ status: ExtractionViewStatus.cancelled }), success: true });
+    await expect(await canvas.findByText("The extraction was cancelled")).toBeVisible();
+  }
+);
 
 Running.test("Shows Reading document as the current step (AC20)", async ({ canvas }) => {
   await expect(canvas.getByRole("tab", { current: "step" })).toHaveTextContent("Reading document");
@@ -235,6 +259,91 @@ CancelAfterCompletion.test(
     await expect(canvas.getByText("FV/1/2026")).toBeVisible();
     await expect(canvas.getByText("The extraction ended before it could be cancelled.")).toBeVisible();
     await expect(canvas.queryByRole("button", { name: "Cancel job" })).not.toBeInTheDocument();
+  }
+);
+
+export const CancelAfterCompletionWhilePolling = meta.story({
+  args: { intervalMs: FAST_INTERVAL_MS },
+  beforeEach: () => {
+    answerChecksWith([json(PENDING)]);
+    cancelMock.mockImplementation(() =>
+      Promise.resolve({
+        error: "The extraction ended before it could be cancelled.",
+        extraction: COMPLETED,
+        kind: CancelFailureKind.finished,
+        success: false
+      })
+    );
+  },
+  name: "Cancel after completion while polling"
+});
+
+CancelAfterCompletionWhilePolling.test(
+  "Shows the completed result after a refused cancel (409) and stops the checks",
+  async ({ canvas, userEvent }) => {
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(1));
+
+    await userEvent.click(canvas.getByRole("button", { name: "Cancel job" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel the job" }));
+
+    await expect(await canvas.findByText("The document has been read")).toBeVisible();
+    await expect(canvas.getByText("FV/1/2026")).toBeVisible();
+    await expect(canvas.getByText("1 required field was not found.")).toBeVisible();
+    const callsWhenSettled = fetchMock.mock.calls.length;
+    // Absence of checks can only be shown over a window: ten intervals after the refused cancel.
+    await new Promise((resolve) => setTimeout(resolve, FAST_INTERVAL_MS * 10));
+    await expect(fetchMock).toHaveBeenCalledTimes(callsWhenSettled);
+  }
+);
+
+export const CompletesWhileConfirming = meta.story({
+  args: { intervalMs: FAST_INTERVAL_MS },
+  beforeEach: () => {
+    answerChecksWith([json(PENDING)]);
+  },
+  name: "Completes while confirming"
+});
+
+CompletesWhileConfirming.test(
+  "Closes the confirmation, sends no cancel and leaves the completed page usable when a check finds it done",
+  async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Cancel job" }));
+    await expect(await screen.findByRole("alertdialog", { name: "Cancel this job?" })).toBeInTheDocument();
+
+    // The extraction completes while the user reads the confirmation.
+    answerChecksWith([json(COMPLETED)]);
+
+    await expect(await canvas.findByText("The document has been read")).toBeVisible();
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    await expect(cancelMock).not.toHaveBeenCalled();
+    await expect(canvas.queryByRole("button", { name: "Cancel job" })).not.toBeInTheDocument();
+    // Reachable by role (not aria-hidden) and clickable (no pointer-events: none left by the dialog).
+    const newDocument = await canvas.findByRole("link", { name: "New document" });
+    await userEvent.click(newDocument);
+    await expect(canvas.getByText("FV/1/2026")).toBeVisible();
+  }
+);
+
+export const CompletedByCheck = meta.story({
+  args: { intervalMs: FAST_INTERVAL_MS },
+  beforeEach: () => {
+    answerChecksWith([json(COMPLETED)]);
+  },
+  name: "Completed by a check"
+});
+
+CompletedByCheck.test(
+  "Lists the polled values, Not found and Missing required in form order (AC24, AC25)",
+  async ({ canvas }) => {
+    await expect(await canvas.findByText("The document has been read")).toBeVisible();
+    const rows = Array.from(canvas.getByRole("list", { name: "Results" }).querySelectorAll("li"));
+
+    await expect(rows.map((row) => row.textContent)).toEqual([
+      "invoice_numberFV/1/2026",
+      "paidNot found",
+      "due_dateMissing required"
+    ]);
+    await expect(canvas.getByText("1 required field was not found.")).toBeVisible();
   }
 );
 

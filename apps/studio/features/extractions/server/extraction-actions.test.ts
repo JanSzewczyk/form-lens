@@ -1,3 +1,4 @@
+import { FailureReason } from "@form-lens/api-client";
 import { beforeEach, describe, expect, test as it, vi } from "vitest";
 
 import { CancelFailureKind, ExtractionViewStatus } from "~/features/extractions/schemas/extraction";
@@ -322,5 +323,50 @@ describe("cancelExtraction", () => {
 
     expect(result.success ? null : result.kind).toBe(CancelFailureKind.notFound);
     expect(received).toHaveLength(0);
+  });
+
+  it("on a 409 whose extraction is gone when read again says it no longer exists (cancel races expiry)", async () => {
+    const reads: Array<string> = [];
+    cancelAnswers(() => problem(409, { detail: "The extraction has already ended." }));
+    server.use(
+      http.get(apiUrl(`/v1/extractions/${EXTRACTION_ID}`), ({ request }) => {
+        reads.push(request.url);
+        return problem(404, { detail: "Extraction not found" });
+      })
+    );
+
+    await expect(cancelExtraction(EXTRACTION_ID)).resolves.toEqual({
+      error: "This extraction no longer exists. Its result may have expired.",
+      kind: CancelFailureKind.notFound,
+      success: false
+    });
+    expect(reads).toHaveLength(1);
+  });
+
+  it("on a 409 returns the failed final state when the extraction failed before the cancel", async () => {
+    const failed = extractionResponseBuilder.one({
+      overrides: {
+        error: { message: "The document could not be parsed.", reason: FailureReason.parse_failed },
+        id: EXTRACTION_ID,
+        status: ExtractionViewStatus.failed
+      }
+    });
+    cancelAnswers(() => problem(409));
+    server.use(http.get(apiUrl(`/v1/extractions/${EXTRACTION_ID}`), () => HttpResponse.json(failed)));
+
+    const result = await cancelExtraction(EXTRACTION_ID);
+
+    expect(result.success ? null : result.kind).toBe(CancelFailureKind.finished);
+    expect("extraction" in result ? result.extraction.status : null).toBe(ExtractionViewStatus.failed);
+    expect("extraction" in result ? result.extraction.error?.message : null).toBe(failed.error?.message);
+  });
+
+  it("says the extraction no longer exists on a 422", async () => {
+    cancelAnswers(() => problem(422, { detail: "id is not a valid UUID" }));
+
+    const result = await cancelExtraction(EXTRACTION_ID);
+
+    expect(result.success ? null : result.kind).toBe(CancelFailureKind.notFound);
+    expect(result.success ? "" : result.error).not.toContain("UUID");
   });
 });

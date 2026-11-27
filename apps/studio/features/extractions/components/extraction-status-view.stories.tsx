@@ -193,3 +193,103 @@ PhoneWidth.test("Stacks the cards and the steps without horizontal scroll on a p
   const stepTops = canvas.getAllByRole("tab").map((step) => step.getBoundingClientRect().top);
   await expect(stepTops[0]).toBeLessThan(stepTops[1] ?? 0);
 });
+
+/** Sets the tab's visibility on the real `document`, which the polling hook reads and listens to. */
+function defineTabHidden(isHidden: boolean) {
+  Object.defineProperty(document, "hidden", { configurable: true, get: () => isHidden });
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => (isHidden ? "hidden" : "visible")
+  });
+}
+
+function setTabHidden(isHidden: boolean) {
+  defineTabHidden(isHidden);
+  document.dispatchEvent(new Event("visibilitychange"));
+}
+
+/** Starts the story with the tab hidden or visible; the cleanup restores the browser's own `document.hidden`. */
+function fakeTabVisibility(isHiddenAtStart: boolean) {
+  defineTabHidden(isHiddenAtStart);
+  return () => {
+    Reflect.deleteProperty(document, "hidden");
+    Reflect.deleteProperty(document, "visibilityState");
+  };
+}
+
+export const OpenedInHiddenTab = meta.story({
+  // A minute between checks: a check within a few seconds can only be the one made when the tab shows.
+  args: { intervalMs: 60_000 },
+  beforeEach: () => {
+    answerChecksWith([json(viewWith({ status: ExtractionViewStatus.running }))]);
+    return fakeTabVisibility(true);
+  },
+  name: "Opened in a hidden tab"
+});
+
+OpenedInHiddenTab.test(
+  "Checks once at once when the hidden tab becomes visible and shows the answer (AC23)",
+  async ({ canvas }) => {
+    await expect(fetchMock).not.toHaveBeenCalled();
+
+    setTabHidden(false);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    await expect(await canvas.findByText("Reading document", { selector: "h2" })).toBeVisible();
+  }
+);
+
+export const HiddenWhilePolling = meta.story({
+  args: { intervalMs: FAST_INTERVAL_MS },
+  beforeEach: () => {
+    answerChecksWith([json(viewWith({ status: ExtractionViewStatus.pending }))]);
+    return fakeTabVisibility(false);
+  },
+  name: "Hidden while polling"
+});
+
+HiddenWhilePolling.test(
+  "Sends no checks while the tab is hidden and resumes them when it is visible again (AC23)",
+  async () => {
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2));
+
+    setTabHidden(true);
+    const callsWhenHidden = fetchMock.mock.calls.length;
+    // Absence of checks can only be shown over a window: ten intervals with the tab hidden.
+    await new Promise((resolve) => setTimeout(resolve, FAST_INTERVAL_MS * 10));
+    await expect(fetchMock).toHaveBeenCalledTimes(callsWhenHidden);
+
+    setTabHidden(false);
+    // The check on becoming visible is sent at once, before any timer.
+    await expect(fetchMock).toHaveBeenCalledTimes(callsWhenHidden + 1);
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(callsWhenHidden + 3));
+  }
+);
+
+export const ReopenedWhileRunning = meta.story({
+  // No intervalMs: the page renders the view with the production interval.
+  args: { initial: viewWith({ status: ExtractionViewStatus.running }) },
+  beforeEach: () => {
+    answerChecksWith([
+      json(viewWith({ status: ExtractionViewStatus.running })),
+      json(viewWith({ status: ExtractionViewStatus.completed }))
+    ]);
+  },
+  name: "Reopened while running"
+});
+
+ReopenedWhileRunning.test(
+  "Resumes checks every 3 s from the server-rendered status and shows the change (AC27, AC21)",
+  async ({ canvas }) => {
+    const start = performance.now();
+    await expect(canvas.getByText("Reading document", { selector: "h2" })).toBeVisible();
+
+    await expect(await canvas.findByText("The document has been read", undefined, { timeout: 8000 })).toBeVisible();
+    const elapsed = performance.now() - start;
+
+    await expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Two checks 3 s apart, the first 3 s after the view mounted (slightly before this test started).
+    await expect(elapsed).toBeGreaterThanOrEqual(5500);
+    await expect(elapsed).toBeLessThan(7500);
+  }
+);

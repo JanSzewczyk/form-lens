@@ -132,6 +132,44 @@ describe("startExtractionPoller", () => {
     expect(fetchImpl).toHaveBeenCalledOnce();
   });
 
+  it.each([ExtractionViewStatus.completed, ExtractionViewStatus.failed, ExtractionViewStatus.cancelled])(
+    "stops after an answer of %s, even when the tab comes back (AC22)",
+    async (status) => {
+      const { fetchImpl, updates, visibility } = setup({ answers: [json(status)] });
+
+      await vi.advanceTimersByTimeAsync(INTERVAL_MS);
+      visibility.setHidden(true);
+      visibility.setHidden(false);
+      await vi.advanceTimersByTimeAsync(INTERVAL_MS * 10);
+
+      expect(updates).toEqual([{ extraction: viewWith(status), kind: "found" }]);
+      expect(fetchImpl).toHaveBeenCalledOnce();
+    }
+  );
+
+  it("started in a hidden tab, sends nothing until the tab is visible, then checks at once (AC23)", async () => {
+    const visibility = new FakeDocument();
+    visibility.hidden = true;
+    const fetchImpl = vi.fn<typeof fetch>(() => Promise.resolve(Response.json(viewWith(ExtractionViewStatus.pending))));
+    const stop = startExtractionPoller({
+      fetchImpl,
+      initialStatus: ExtractionViewStatus.pending,
+      intervalMs: INTERVAL_MS,
+      onUpdate: () => undefined,
+      url: URL,
+      visibility: visibility as unknown as Document
+    });
+
+    await vi.advanceTimersByTimeAsync(INTERVAL_MS * 10);
+    expect(fetchImpl).not.toHaveBeenCalled();
+
+    visibility.setHidden(false);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(INTERVAL_MS);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
   it("sends nothing while the tab is hidden, however long (AC23)", async () => {
     const { fetchImpl, visibility, stop } = setup();
 

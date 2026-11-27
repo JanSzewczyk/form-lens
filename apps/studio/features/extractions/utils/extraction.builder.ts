@@ -14,6 +14,8 @@ export const extractionResponseBuilder: Builder<ExtractionResponse> = build<Extr
     attempts: 0,
     created_at: "2026-11-26T08:00:00Z",
     error: null,
+    fields: () => [],
+    filename: "invoice_118_2026.pdf",
     finished_at: null,
     id: sequence((counter) => `10000000-0000-4000-8000-${String(counter).padStart(12, "0")}`),
     missing_required: () => [],
@@ -21,6 +23,7 @@ export const extractionResponseBuilder: Builder<ExtractionResponse> = build<Extr
     started_at: null,
     status: ExtractionStatus.pending,
     template_id: "00000000-0000-4000-8000-000000000001",
+    template_name: "VAT invoice",
     template_version: 1
   }
 });

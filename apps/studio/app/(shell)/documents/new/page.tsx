@@ -1,6 +1,7 @@
 import { Button, Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@szum-tech/design-system";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { z } from "zod";
 
 import { env } from "~/data/env/server";
 import { ChooseFormList } from "~/features/extractions/components/choose-form-list";
@@ -24,6 +25,8 @@ const MAX_SEARCH_LENGTH = 100;
 /** The last page whose offset stays inside the API's 2**31 - 1 limit with 12 forms per page (see the Forms page). */
 const MAX_PAGE = 178_956_971;
 
+const templateIdSchema = z.uuid();
+
 type SearchParams = PageProps<"/documents/new">["searchParams"] extends Promise<infer Params> ? Params : never;
 
 function firstValue(value: string | Array<string> | undefined): string {
@@ -39,12 +42,20 @@ function parseSearchParams(params: SearchParams) {
   return { page, search, templateId };
 }
 
-/** The step lives in the URL: no `?template` is Choose form, a `?template=<id>` is Upload. */
+/**
+ * The step lives in the URL: no `?template` is Choose form, a `?template=<id>` is Upload. An id that is not a UUID is
+ * never sent: the generated client puts it into the path as it is (`../extractions` would call another endpoint), and it
+ * could not name a form anyway.
+ */
 async function loadData(searchParams: PageProps<"/documents/new">["searchParams"]) {
   const { page, search, templateId } = parseSearchParams(await searchParams);
 
   if (templateId === "") {
     return { page, result: await loadTemplates({ page, search }), search, step: NewDocumentStep.chooseForm } as const;
+  }
+
+  if (!templateIdSchema.safeParse(templateId).success) {
+    return { maxMb: env.FORMLENS_MAX_UPLOAD_MB, step: NewDocumentStep.upload, template: null } as const;
   }
 
   const result = await loadTemplate(templateId);

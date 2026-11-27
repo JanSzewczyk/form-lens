@@ -7,9 +7,16 @@ import { apiUrl, HttpResponse, http, problem, server } from "~/tests/unit/msw/se
 
 vi.mock("~/features/extractions/server/extraction-actions", () => ({ submitExtraction: vi.fn() }));
 vi.mock("~/lib/logger", async () => (await import("~/tests/unit/mock-logger")).loggerModule);
+/** The real loader behind a spy, so a test can see that an id was never sent to the API. */
+vi.mock("~/features/templates/server/load-template", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/features/templates/server/load-template")>();
+  return { loadTemplate: vi.fn(actual.loadTemplate) };
+});
 vi.hoisted(() => {
   vi.stubEnv("FORMLENS_MAX_UPLOAD_MB", "25");
 });
+
+import { loadTemplate } from "~/features/templates/server/load-template";
 
 import NewDocumentPage, { metadata } from "./page";
 
@@ -22,6 +29,7 @@ async function renderPage(query: Record<string, string>) {
 
 beforeEach(() => {
   resetLog();
+  vi.mocked(loadTemplate).mockClear();
 });
 
 describe("New document page", () => {
@@ -86,6 +94,7 @@ describe("New document page", () => {
     expect(html).toContain("Form not found");
     expect(html).toMatch(/<a[^>]*href="\/documents\/new"[^>]*>Choose form<\/a>/);
     expect(html).not.toContain("Start analysis");
+    expect(loadTemplate).toHaveBeenCalledWith(TEMPLATE_ID);
   });
 
   it("throws to the error page when the API is down on the Upload step", async () => {
@@ -126,14 +135,17 @@ describe("New document page", () => {
     expect(html).not.toContain("Page 99 of 2");
   });
 
-  it("says the form was not found for a template id the API cannot read (AC8)", async () => {
-    server.use(http.get(apiUrl("/v1/templates/not-an-id"), () => problem(422)));
+  it.each([["not-a-uuid"], ["../extractions"], ["..%2Fextractions"], [`${TEMPLATE_ID}/../../extractions`]])(
+    "says the form was not found for the id %s and never sends it to the API (AC8)",
+    async (templateId) => {
+      const html = await renderPage({ template: templateId });
 
-    const html = await renderPage({ template: "not-an-id" });
-
-    expect(html).toContain("Form not found");
-    expect(html).not.toContain("Start analysis");
-  });
+      expect(html).toContain("Form not found");
+      expect(html).toMatch(/<a[^>]*href="\/documents\/new"[^>]*>Choose form<\/a>/);
+      expect(html).not.toContain("Start analysis");
+      expect(loadTemplate).not.toHaveBeenCalled();
+    }
+  );
 });
 
 /** The API's list endpoint over `forms`, sliced by `offset` and `limit`; returns what each request asked for. */

@@ -75,7 +75,7 @@ describe("capUploadLimitMb edges", () => {
 
 describe("maxUploadMb", () => {
   /** A fresh `data/env/server` evaluated with the given runtime and build-time limits. */
-  async function importEnvWith(runtime: string, build: string) {
+  async function importEnvWith(runtime: string | undefined, build: string | undefined) {
     vi.resetModules();
     vi.stubEnv("FORMLENS_MAX_UPLOAD_MB", runtime);
     vi.stubEnv("FORMLENS_BUILD_MAX_UPLOAD_MB", build);
@@ -114,5 +114,145 @@ describe("maxUploadMb", () => {
     await importEnvWith(runtime, build);
 
     expect(log.warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("maxUploadMb warning edges", () => {
+  async function importEnvWith(runtime: string | undefined, build: string | undefined) {
+    vi.resetModules();
+    vi.stubEnv("FORMLENS_MAX_UPLOAD_MB", runtime);
+    vi.stubEnv("FORMLENS_BUILD_MAX_UPLOAD_MB", build);
+    try {
+      return await import("./server");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  }
+
+  it("warns once when the runtime value is one MB above the build-time limit", async () => {
+    const { maxUploadMb } = await importEnvWith("26", "25");
+
+    expect(maxUploadMb).toBe(25);
+    expect(log.warn).toHaveBeenCalledOnce();
+    expect(log.withMetadata).toHaveBeenCalledWith({ buildMaxUploadMb: 25, requestedMaxUploadMb: 26 });
+  });
+
+  it("takes an equal value above the default without a warning", async () => {
+    const { maxUploadMb } = await importEnvWith("40", "40");
+
+    expect(maxUploadMb).toBe(40);
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it("uses the default 25 MB without a warning when neither side is set", async () => {
+    const { maxUploadMb } = await importEnvWith(undefined, undefined);
+
+    expect(maxUploadMb).toBe(25);
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["unset", undefined],
+    ["empty", ""]
+  ])(
+    "does not warn when the runtime value is %s and the build-time limit is below the default (stricter reading of B3)",
+    async (_case, runtime) => {
+      const { maxUploadMb } = await importEnvWith(runtime, "10");
+
+      expect(maxUploadMb).toBe(10);
+      expect(log.warn).not.toHaveBeenCalled();
+    }
+  );
+});
+
+describe("maxUploadMb with env validation on", () => {
+  /** A fresh `data/env/server` evaluated as the running app does: env validation on, the schema's default applies. */
+  async function importValidatedEnvWith(runtime: string | undefined, build: string | undefined) {
+    vi.resetModules();
+    vi.stubEnv("SKIP_ENV_VALIDATION", "");
+    vi.stubEnv("FORMLENS_MAX_UPLOAD_MB", runtime);
+    vi.stubEnv("FORMLENS_BUILD_MAX_UPLOAD_MB", build);
+    try {
+      return await import("./server");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  }
+
+  it("uses the declared default 25 MB when the runtime value is not set", async () => {
+    const { env, maxUploadMb } = await importValidatedEnvWith(undefined, "25");
+
+    expect(env.FORMLENS_MAX_UPLOAD_MB).toBe(25);
+    expect(maxUploadMb).toBe(25);
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it("does not warn when the runtime value is not set and the build-time limit is below the default (stricter reading of B3)", async () => {
+    const { maxUploadMb } = await importValidatedEnvWith(undefined, "10");
+
+    expect(maxUploadMb).toBe(10);
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it("caps a higher runtime value at the build-time limit and warns once", async () => {
+    const { maxUploadMb } = await importValidatedEnvWith("50", "25");
+
+    expect(maxUploadMb).toBe(25);
+    expect(log.warn).toHaveBeenCalledOnce();
+    expect(log.warn).toHaveBeenCalledWith("Upload limit capped at the build-time limit");
+  });
+
+  it.each([["lots"], ["0"], ["-5"], ["2.5"]])(
+    "refuses the invalid runtime value %j when the app starts",
+    async (runtime) => {
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      await expect(importValidatedEnvWith(runtime, "25")).rejects.toThrow("Invalid environment variables");
+    }
+  );
+});
+
+describe("the build-time limit next.config.ts inlines", () => {
+  /** A fresh `next.config.ts` evaluated with `FORMLENS_MAX_UPLOAD_MB` as the build sees it. */
+  async function importNextConfigWith(build: string | undefined) {
+    vi.resetModules();
+    vi.stubEnv("FORMLENS_MAX_UPLOAD_MB", build);
+    try {
+      return (await import("~/next.config")).default;
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  }
+
+  it.each([
+    ["40", "40", "41mb"],
+    ["1", "1", "2mb"],
+    [undefined, "25", "26mb"],
+    ["", "25", "26mb"],
+    ["lots", "25", "26mb"],
+    ["0", "25", "26mb"]
+  ])("builds with %j as the limit %s MB and a request body limit of %s", async (build, inlined, bodyLimit) => {
+    const config = await importNextConfigWith(build);
+
+    expect(config.env.FORMLENS_BUILD_MAX_UPLOAD_MB).toBe(inlined);
+    expect(config.experimental.serverActions.bodySizeLimit).toBe(bodyLimit);
+    expect(config.experimental.proxyClientMaxBodySize).toBe(bodyLimit);
+  });
+
+  it("caps the runtime value at the limit the build inlined, under the name the server reads", async () => {
+    const config = await importNextConfigWith("40");
+    vi.resetModules();
+    vi.stubEnv("FORMLENS_MAX_UPLOAD_MB", "50");
+    for (const [name, value] of Object.entries(config.env)) {
+      vi.stubEnv(name, value);
+    }
+    try {
+      const { maxUploadMb } = await import("./server");
+
+      expect(maxUploadMb).toBe(40);
+      expect(log.withMetadata).toHaveBeenCalledWith({ buildMaxUploadMb: 40, requestedMaxUploadMb: 50 });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

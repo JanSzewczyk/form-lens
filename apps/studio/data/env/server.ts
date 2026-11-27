@@ -60,7 +60,13 @@ const requestedMaxUploadMb = parseUploadLimitMb(env.FORMLENS_MAX_UPLOAD_MB);
 /** The upload limit every consumer uses (the UI hint and the action's file check). */
 export const maxUploadMb = capUploadLimitMb(requestedMaxUploadMb, buildMaxUploadMb);
 
+/**
+ * Whether the operator set a runtime value. The schema's default fills an unset or empty one, so `env` cannot tell, and
+ * an image built with a limit below the default would otherwise warn about a value nobody asked for.
+ */
+const isRuntimeLimitSet = (process.env.FORMLENS_MAX_UPLOAD_MB ?? "") !== "";
+
 /** Logged once, when the server first reads the env: a higher runtime value is otherwise ignored without a word. */
-if (requestedMaxUploadMb > maxUploadMb) {
+if (isRuntimeLimitSet && requestedMaxUploadMb > maxUploadMb) {
   log.withMetadata({ buildMaxUploadMb, requestedMaxUploadMb }).warn("Upload limit capped at the build-time limit");
 }

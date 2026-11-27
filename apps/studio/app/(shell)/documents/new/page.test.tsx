@@ -112,6 +112,18 @@ describe("New document page", () => {
 
     await expect(renderPage({ template: TEMPLATE_ID })).rejects.toThrow("Failed to load the form");
   });
+  it.each([
+    ["a server error", () => problem(500)],
+    ["a form of an unexpected shape", () => HttpResponse.json({ id: TEMPLATE_ID, name: "VAT invoice" })]
+  ])(
+    "throws to the error page, not to Form not found, when the API answers %s on the Upload step",
+    async (_case, answer) => {
+      server.use(http.get(apiUrl(`/v1/templates/${TEMPLATE_ID}`), answer));
+
+      await expect(renderPage({ template: TEMPLATE_ID })).rejects.toThrow("Failed to load the form");
+    }
+  );
+
   it("lets the user page through every form, keeping the search (AC2, AC4)", async () => {
     const forms = templateResponseBuilder.many(13);
     const asked = servePagedForms(forms);

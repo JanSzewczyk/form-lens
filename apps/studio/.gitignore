@@ -24,6 +24,8 @@ lib-cov
 
 # Coverage directory used by tools like istanbul
 coverage
+coverage-unit
+coverage-storybook
 *.lcov
 
 # nyc test coverage
@@ -127,3 +129,6 @@ src/styles
 # Claude
 /.claude/*.local.json
 /bash.exe.stackdump
+
+# Written by `next dev` and `next build`
+/AGENTS.md

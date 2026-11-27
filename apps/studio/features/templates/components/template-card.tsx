@@ -52,7 +52,7 @@ export function TemplateCard({ template, now }: TemplateCardProps) {
       </CardContent>
       <CardFooter className="gap-2">
         <Button asChild size="sm">
-          <Link href="/documents/new">Use form</Link>
+          <Link href={`/documents/new?template=${encodeURIComponent(template.id)}`}>Use form</Link>
         </Button>
         <Button asChild size="sm" variant="outline">
           <Link aria-label={`Edit ${template.name}`} href={`/forms/${template.id}/edit`}>

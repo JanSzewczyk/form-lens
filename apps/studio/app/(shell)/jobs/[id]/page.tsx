@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ExtractionStatusView } from "~/features/extractions/components/extraction-status-view";
 import { cancelExtraction } from "~/features/extractions/server/extraction-actions";
-import { loadExtraction } from "~/features/extractions/server/load-extraction";
+import { ExtractionResultStatus, loadExtraction } from "~/features/extractions/server/load-extraction";
 
 /** The status comes from the API at request time; the build must not need the API. */
 export const dynamic = "force-dynamic";
@@ -12,10 +12,10 @@ export const dynamic = "force-dynamic";
 async function loadData(id: string) {
   const result = await loadExtraction(id);
 
-  if (result.status === "not-found") {
+  if (result.status === ExtractionResultStatus.notFound) {
     notFound();
   }
-  if (result.status === "unreachable") {
+  if (result.status === ExtractionResultStatus.unreachable) {
     throw new Error("Failed to load the extraction: the FormLens API does not answer.");
   }
   return { extraction: result.extraction };
@@ -25,7 +25,7 @@ export async function generateMetadata({ params }: PageProps<"/jobs/[id]">): Pro
   const { id } = await params;
   const result = await loadExtraction(id);
 
-  return { title: result.status === "found" ? `Job ${result.extraction.template_name}` : "Job" };
+  return { title: result.status === ExtractionResultStatus.found ? `Job ${result.extraction.template_name}` : "Job" };
 }
 
 export default async function JobPage({ params }: PageProps<"/jobs/[id]">) {

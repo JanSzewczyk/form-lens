@@ -1,4 +1,6 @@
 import { type ExtractionResponse, FailureReason } from "@form-lens/api-client";
+import { delay, HttpResponse, http } from "msw";
+import type { SetupWorker } from "msw/browser";
 import { expect, fn, screen, waitFor } from "storybook/test";
 import preview from "~/.storybook/preview";
 import {
@@ -32,39 +34,71 @@ function viewWith(overrides: Partial<ExtractionResponse>): ExtractionView {
 
 const PENDING = viewWith({ status: ExtractionViewStatus.pending });
 
-const fetchMock = fn<typeof fetch>();
+/** Records every check of the rendered extraction the Studio route receives, with the request's cache mode and path. */
+const checkSpy = fn<(check: { cache: RequestCache; pathname: string }) => void>();
 
-/** Answers every check of the Studio route in turn with `answers`; the last one repeats. */
-function answerChecksWith(answers: Array<() => Promise<Response>>) {
+type Answer = (extractionId: string) => Response;
+
+type ChecksContext = { args: { initial: ExtractionView }; msw: SetupWorker };
+
+/**
+ * Answers the checks of the rendered extraction in turn with `answers` (the last one repeats); with none, a check
+ * never answers. Each one is recorded in `checkSpy`. Handlers added later take precedence.
+ */
+function answerChecksWith({ args, msw }: ChecksContext, answers: Array<Answer>) {
+  const extractionId = args.initial.id;
   let call = 0;
-  fetchMock.mockImplementation(() => {
-    const answer = answers[Math.min(call, answers.length - 1)];
-    call += 1;
-    return answer ? answer() : new Promise<Response>(() => undefined);
-  });
+  msw.use(
+    http.get(`/api/extractions/${extractionId}`, ({ request }) => {
+      checkSpy({ cache: request.cache, pathname: new URL(request.url).pathname });
+      const answer = answers[Math.min(call, answers.length - 1)];
+      call += 1;
+      return answer ? answer(extractionId) : delay("infinite");
+    })
+  );
 }
 
-function json(view: ExtractionView) {
-  return () => Promise.resolve(Response.json(view));
+/** Answers with `view` as the state of the extraction that was asked for. */
+function json(view: ExtractionView): Answer {
+  return (extractionId) => HttpResponse.json({ ...view, id: extractionId });
+}
+
+function statusCode(status: number): Answer {
+  return () => HttpResponse.json({}, { status });
+}
+
+/**
+ * Proves the checks have stopped. A check sent just before they stopped may still reach the worker during the first
+ * window; the second window must then see none at all. Absence can only be shown over a window: ten intervals each.
+ */
+async function expectChecksStopped(callsWhenStopped: number) {
+  await new Promise((resolve) => setTimeout(resolve, FAST_INTERVAL_MS * 10));
+  const callsAfterInFlight = checkSpy.mock.calls.length;
+  await expect(callsAfterInFlight).toBeLessThanOrEqual(callsWhenStopped + 1);
+  await new Promise((resolve) => setTimeout(resolve, FAST_INTERVAL_MS * 10));
+  await expect(checkSpy).toHaveBeenCalledTimes(callsAfterInFlight);
 }
 
 const cancelMock = fn<(extractionId: string) => Promise<CancelResult>>();
 
 const meta = preview.meta({
   args: { initial: PENDING, onCancelAction: cancelMock },
-  beforeEach: () => {
-    const realFetch = globalThis.fetch;
-    fetchMock.mockReset();
+  beforeEach: (context) => {
+    // Every render shows its own extraction, so a check an earlier render sent that is still on its way through the
+    // service worker is never counted as one of this render's checks.
+    context.args.initial = { ...context.args.initial, id: crypto.randomUUID() };
+    checkSpy.mockReset();
     cancelMock.mockReset();
-    // By default a cancel never answers; a story that cancels says what the action returns.
-    cancelMock.mockImplementation(() => new Promise<CancelResult>(() => undefined));
+    // By default a cancel is refused as unavailable; a story that cancels says what the action returns.
+    cancelMock.mockResolvedValue({
+      error: "The job could not be cancelled: the API is unavailable. Try again in a moment.",
+      kind: CancelFailureKind.unavailable,
+      success: false
+    });
+    // A check for an earlier render's extraction never answers and is not recorded.
+    context.msw.use(http.get("/api/extractions/:id", () => delay("infinite")));
     // By default a check never answers, so a story shows exactly the state it was given.
-    fetchMock.mockImplementation(() => new Promise<Response>(() => undefined));
-    globalThis.fetch = fetchMock;
-
-    return () => {
-      globalThis.fetch = realFetch;
-    };
+    answerChecksWith(context, []);
   },
   component: ExtractionStatusView,
   parameters: { layout: "padded" },
@@ -87,12 +121,15 @@ Pending.test(
   }
 );
 
-Pending.test("Shows file · form, the submit time and the polling footer with the id (AC39)", async ({ canvas }) => {
-  await expect(canvas.getByText("invoice_118_2026.pdf · VAT invoice")).toBeVisible();
-  await expect(canvas.getByText(/26 Nov 2026/)).toBeVisible();
-  await expect(canvas.getByText("Polling job status every 3 seconds")).toBeVisible();
-  await expect(canvas.getByText(PENDING.id)).toBeVisible();
-});
+Pending.test(
+  "Shows file · form, the submit time and the polling footer with the id (AC39)",
+  async ({ args, canvas }) => {
+    await expect(canvas.getByText("invoice_118_2026.pdf · VAT invoice")).toBeVisible();
+    await expect(canvas.getByText(/26 Nov 2026/)).toBeVisible();
+    await expect(canvas.getByText("Polling job status every 3 seconds")).toBeVisible();
+    await expect(canvas.getByText(args.initial.id)).toBeVisible();
+  }
+);
 
 Pending.test("Shows Cancel job while the extraction waits in the queue (AC31)", async ({ canvas }) => {
   await expect(canvas.getByRole("button", { name: "Cancel job" })).toBeEnabled();
@@ -161,7 +198,7 @@ Completed.test(
 
 Completed.test("Shows no Cancel job and sends no checks (AC31)", async ({ canvas }) => {
   await expect(canvas.queryByRole("button", { name: "Cancel job" })).not.toBeInTheDocument();
-  await expect(fetchMock).not.toHaveBeenCalled();
+  await expect(checkSpy).not.toHaveBeenCalled();
 });
 
 const FAILED = viewWith({
@@ -193,8 +230,8 @@ Cancelled.test("Shows the extraction as cancelled, without Cancel job (AC31)", a
 
 export const CancelWhilePolling = meta.story({
   args: { intervalMs: FAST_INTERVAL_MS },
-  beforeEach: () => {
-    answerChecksWith([json(PENDING)]);
+  beforeEach: (context) => {
+    answerChecksWith(context, [json(PENDING)]);
     cancelMock.mockImplementation((extractionId) =>
       Promise.resolve({
         extraction: viewWith({ id: extractionId, status: ExtractionViewStatus.cancelled }),
@@ -207,20 +244,17 @@ export const CancelWhilePolling = meta.story({
 
 CancelWhilePolling.test(
   "Confirming shows the extraction as cancelled and stops the checks (AC30)",
-  async ({ canvas, userEvent }) => {
-    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(1));
+  async ({ args, canvas, userEvent }) => {
+    await waitFor(() => expect(checkSpy.mock.calls.length).toBeGreaterThanOrEqual(1));
 
     await userEvent.click(canvas.getByRole("button", { name: "Cancel job" }));
     await userEvent.click(await screen.findByRole("button", { name: "Cancel the job" }));
 
     await expect(await canvas.findByText("The extraction was cancelled")).toBeVisible();
     await expect(cancelMock).toHaveBeenCalledOnce();
-    await expect(cancelMock).toHaveBeenCalledWith(PENDING.id);
+    await expect(cancelMock).toHaveBeenCalledWith(args.initial.id);
     await expect(canvas.queryByRole("button", { name: "Cancel job" })).not.toBeInTheDocument();
-    const callsWhenCancelled = fetchMock.mock.calls.length;
-    // Absence of checks can only be shown over a window: ten intervals after the cancel.
-    await new Promise((resolve) => setTimeout(resolve, FAST_INTERVAL_MS * 10));
-    await expect(fetchMock).toHaveBeenCalledTimes(callsWhenCancelled);
+    await expectChecksStopped(checkSpy.mock.calls.length);
   }
 );
 
@@ -232,16 +266,16 @@ CancelWhilePolling.test("Dismissing the confirmation changes nothing (AC30)", as
   await expect(cancelMock).not.toHaveBeenCalled();
   await expect(canvas.getByText("Waiting in queue", { selector: "h2" })).toBeVisible();
   await expect(canvas.getByRole("button", { name: "Cancel job" })).toBeVisible();
-  const calls = fetchMock.mock.calls.length;
-  await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(calls));
+  const calls = checkSpy.mock.calls.length;
+  await waitFor(() => expect(checkSpy.mock.calls.length).toBeGreaterThan(calls));
 });
 
 export const CancelAfterCompletion = meta.story({
   beforeEach: () => {
-    cancelMock.mockImplementation(() =>
+    cancelMock.mockImplementation((extractionId) =>
       Promise.resolve({
         error: "The extraction ended before it could be cancelled.",
-        extraction: COMPLETED,
+        extraction: { ...COMPLETED, id: extractionId },
         kind: CancelFailureKind.finished,
         success: false
       })
@@ -265,12 +299,12 @@ CancelAfterCompletion.test(
 
 export const CancelAfterCompletionWhilePolling = meta.story({
   args: { intervalMs: FAST_INTERVAL_MS },
-  beforeEach: () => {
-    answerChecksWith([json(PENDING)]);
-    cancelMock.mockImplementation(() =>
+  beforeEach: (context) => {
+    answerChecksWith(context, [json(PENDING)]);
+    cancelMock.mockImplementation((extractionId) =>
       Promise.resolve({
         error: "The extraction ended before it could be cancelled.",
-        extraction: COMPLETED,
+        extraction: { ...COMPLETED, id: extractionId },
         kind: CancelFailureKind.finished,
         success: false
       })
@@ -282,7 +316,7 @@ export const CancelAfterCompletionWhilePolling = meta.story({
 CancelAfterCompletionWhilePolling.test(
   "Shows the completed result after a refused cancel (409) and stops the checks",
   async ({ canvas, userEvent }) => {
-    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(1));
+    await waitFor(() => expect(checkSpy.mock.calls.length).toBeGreaterThanOrEqual(1));
 
     await userEvent.click(canvas.getByRole("button", { name: "Cancel job" }));
     await userEvent.click(await screen.findByRole("button", { name: "Cancel the job" }));
@@ -290,29 +324,26 @@ CancelAfterCompletionWhilePolling.test(
     await expect(await canvas.findByText("The document has been read")).toBeVisible();
     await expect(canvas.getByText("FV/1/2026")).toBeVisible();
     await expect(canvas.getByText("1 required field was not found.")).toBeVisible();
-    const callsWhenSettled = fetchMock.mock.calls.length;
-    // Absence of checks can only be shown over a window: ten intervals after the refused cancel.
-    await new Promise((resolve) => setTimeout(resolve, FAST_INTERVAL_MS * 10));
-    await expect(fetchMock).toHaveBeenCalledTimes(callsWhenSettled);
+    await expectChecksStopped(checkSpy.mock.calls.length);
   }
 );
 
 export const CompletesWhileConfirming = meta.story({
   args: { intervalMs: FAST_INTERVAL_MS },
-  beforeEach: () => {
-    answerChecksWith([json(PENDING)]);
+  beforeEach: (context) => {
+    answerChecksWith(context, [json(PENDING)]);
   },
   name: "Completes while confirming"
 });
 
 CompletesWhileConfirming.test(
   "Closes the confirmation, sends no cancel and leaves the completed page usable when a check finds it done",
-  async ({ canvas, userEvent }) => {
+  async ({ args, canvas, msw, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: "Cancel job" }));
     await expect(await screen.findByRole("alertdialog", { name: "Cancel this job?" })).toBeInTheDocument();
 
     // The extraction completes while the user reads the confirmation.
-    answerChecksWith([json(COMPLETED)]);
+    answerChecksWith({ args, msw }, [json(COMPLETED)]);
 
     await expect(await canvas.findByText("The document has been read")).toBeVisible();
     await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
@@ -327,8 +358,8 @@ CompletesWhileConfirming.test(
 
 export const CompletedByCheck = meta.story({
   args: { intervalMs: FAST_INTERVAL_MS },
-  beforeEach: () => {
-    answerChecksWith([json(COMPLETED)]);
+  beforeEach: (context) => {
+    answerChecksWith(context, [json(COMPLETED)]);
   },
   name: "Completed by a check"
 });
@@ -374,8 +405,8 @@ CancelUnavailable.test("Says the job could not be cancelled and keeps it running
 
 export const LiveUpdates = meta.story({
   args: { intervalMs: FAST_INTERVAL_MS },
-  beforeEach: () => {
-    answerChecksWith([
+  beforeEach: (context) => {
+    answerChecksWith(context, [
       json(viewWith({ status: ExtractionViewStatus.running })),
       json(viewWith({ status: ExtractionViewStatus.completed }))
     ]);
@@ -384,25 +415,26 @@ export const LiveUpdates = meta.story({
 
 LiveUpdates.test(
   "Follows pending → running → completed without a reload, then stops checking (AC21, AC22)",
-  async ({ canvas }) => {
+  async ({ args, canvas }) => {
     await expect(await canvas.findByText("The document has been read")).toBeVisible();
-    await expect(fetchMock).toHaveBeenCalledWith(
-      `/api/extractions/${PENDING.id}`,
-      expect.objectContaining({ cache: "no-store" })
-    );
-    const calls = fetchMock.mock.calls.length;
+    await expect(checkSpy).toHaveBeenCalledWith({
+      cache: "no-store",
+      pathname: `/api/extractions/${args.initial.id}`
+    });
+    // The completed answer is the reply to the last check sent, so none can still be on its way.
+    const calls = checkSpy.mock.calls.length;
     await new Promise((resolve) => setTimeout(resolve, FAST_INTERVAL_MS * 5));
-    await expect(fetchMock).toHaveBeenCalledTimes(calls);
+    await expect(checkSpy).toHaveBeenCalledTimes(calls);
     await expect(calls).toBe(2);
   }
 );
 
 export const Unreachable = meta.story({
   args: { intervalMs: FAST_INTERVAL_MS },
-  beforeEach: () => {
-    answerChecksWith([
-      () => Promise.reject(new TypeError("Failed to fetch")),
-      () => Promise.resolve(Response.json({ unreachable: true }, { status: 502 })),
+  beforeEach: (context) => {
+    answerChecksWith(context, [
+      () => HttpResponse.error(),
+      statusCode(502),
       json(viewWith({ status: ExtractionViewStatus.running }))
     ]);
   }
@@ -414,14 +446,14 @@ Unreachable.test(
     await expect(await canvas.findByText("The status cannot be refreshed")).toBeVisible();
     await expect(await canvas.findByText("Reading document", { selector: "h2" })).toBeVisible();
     await expect(canvas.queryByText("The status cannot be refreshed")).not.toBeInTheDocument();
-    await expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(3);
+    await expect(checkSpy.mock.calls.length).toBeGreaterThanOrEqual(3);
   }
 );
 
 export const GoneWhilePolling = meta.story({
   args: { intervalMs: FAST_INTERVAL_MS },
-  beforeEach: () => {
-    answerChecksWith([() => Promise.resolve(Response.json({ notFound: true }, { status: 404 }))]);
+  beforeEach: (context) => {
+    answerChecksWith(context, [statusCode(404)]);
   }
 });
 
@@ -430,7 +462,7 @@ GoneWhilePolling.test(
   async ({ canvas }) => {
     await expect(await canvas.findByText("Extraction not found")).toBeVisible();
     await expect(canvas.getByRole("link", { name: "New document" })).toHaveAttribute("href", "/documents/new");
-    await expect(fetchMock).toHaveBeenCalledOnce();
+    await expect(checkSpy).toHaveBeenCalledOnce();
   }
 );
 
@@ -462,19 +494,22 @@ export const PhoneWidth = meta.story({
   name: "Phone width"
 });
 
-PhoneWidth.test("Stacks the cards and the steps without horizontal scroll on a phone (AC35)", async ({ canvas }) => {
-  await expect(window.matchMedia("(min-width: 640px)").matches).toBe(false);
+PhoneWidth.test(
+  "Stacks the cards and the steps without horizontal scroll on a phone (AC35)",
+  async ({ args, canvas }) => {
+    await expect(window.matchMedia("(min-width: 640px)").matches).toBe(false);
 
-  await waitFor(() =>
-    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(document.documentElement.clientWidth)
-  );
-  // The id sits in the footer, at the bottom of the status card: stacked, the Results list starts below it.
-  const statusCardBottom = canvas.getByText(PENDING.id).getBoundingClientRect().bottom;
-  const resultsTop = canvas.getByRole("list", { name: "Results" }).getBoundingClientRect().top;
-  await expect(resultsTop).toBeGreaterThan(statusCardBottom);
-  const stepTops = canvas.getAllByRole("tab").map((step) => step.getBoundingClientRect().top);
-  await expect(stepTops[0]).toBeLessThan(stepTops[1] ?? 0);
-});
+    await waitFor(() =>
+      expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(document.documentElement.clientWidth)
+    );
+    // The id sits in the footer, at the bottom of the status card: stacked, the Results list starts below it.
+    const statusCardBottom = canvas.getByText(args.initial.id).getBoundingClientRect().bottom;
+    const resultsTop = canvas.getByRole("list", { name: "Results" }).getBoundingClientRect().top;
+    await expect(resultsTop).toBeGreaterThan(statusCardBottom);
+    const stepTops = canvas.getAllByRole("tab").map((step) => step.getBoundingClientRect().top);
+    await expect(stepTops[0]).toBeLessThan(stepTops[1] ?? 0);
+  }
+);
 
 /** Sets the tab's visibility on the real `document`, which the polling hook reads and listens to. */
 function defineTabHidden(isHidden: boolean) {
@@ -502,8 +537,8 @@ function fakeTabVisibility(isHiddenAtStart: boolean) {
 export const OpenedInHiddenTab = meta.story({
   // A minute between checks: a check within a few seconds can only be the one made when the tab shows.
   args: { intervalMs: 60_000 },
-  beforeEach: () => {
-    answerChecksWith([json(viewWith({ status: ExtractionViewStatus.running }))]);
+  beforeEach: (context) => {
+    answerChecksWith(context, [json(viewWith({ status: ExtractionViewStatus.running }))]);
     return fakeTabVisibility(true);
   },
   name: "Opened in a hidden tab"
@@ -512,19 +547,25 @@ export const OpenedInHiddenTab = meta.story({
 OpenedInHiddenTab.test(
   "Checks once at once when the hidden tab becomes visible and shows the answer (AC23)",
   async ({ canvas }) => {
-    await expect(fetchMock).not.toHaveBeenCalled();
+    await expect(checkSpy).not.toHaveBeenCalled();
 
     setTabHidden(false);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    await waitFor(() => expect(checkSpy).toHaveBeenCalledOnce());
     await expect(await canvas.findByText("Reading document", { selector: "h2" })).toBeVisible();
   }
 );
 
+/**
+ * Long enough that the check made when the tab shows again (within half an interval) cannot be mistaken for one the
+ * timer would send.
+ */
+const HIDDEN_TAB_INTERVAL_MS = 1000;
+
 export const HiddenWhilePolling = meta.story({
-  args: { intervalMs: FAST_INTERVAL_MS },
-  beforeEach: () => {
-    answerChecksWith([json(viewWith({ status: ExtractionViewStatus.pending }))]);
+  args: { intervalMs: HIDDEN_TAB_INTERVAL_MS },
+  beforeEach: (context) => {
+    answerChecksWith(context, [json(viewWith({ status: ExtractionViewStatus.pending }))]);
     return fakeTabVisibility(false);
   },
   name: "Hidden while polling"
@@ -533,26 +574,32 @@ export const HiddenWhilePolling = meta.story({
 HiddenWhilePolling.test(
   "Sends no checks while the tab is hidden and resumes them when it is visible again (AC23)",
   async () => {
-    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(checkSpy.mock.calls.length).toBeGreaterThanOrEqual(2), {
+      timeout: HIDDEN_TAB_INTERVAL_MS * 4
+    });
 
     setTabHidden(true);
-    const callsWhenHidden = fetchMock.mock.calls.length;
-    // Absence of checks can only be shown over a window: ten intervals with the tab hidden.
-    await new Promise((resolve) => setTimeout(resolve, FAST_INTERVAL_MS * 10));
-    await expect(fetchMock).toHaveBeenCalledTimes(callsWhenHidden);
+    const callsWhenHidden = checkSpy.mock.calls.length;
+    // Absence of checks can only be shown over a window: two intervals with the tab hidden.
+    await new Promise((resolve) => setTimeout(resolve, HIDDEN_TAB_INTERVAL_MS * 2));
+    await expect(checkSpy).toHaveBeenCalledTimes(callsWhenHidden);
 
     setTabHidden(false);
-    // The check on becoming visible is sent at once, before any timer.
-    await expect(fetchMock).toHaveBeenCalledTimes(callsWhenHidden + 1);
-    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(callsWhenHidden + 3));
+    // The check on becoming visible is sent at once, well before the timer would send one.
+    await waitFor(() => expect(checkSpy).toHaveBeenCalledTimes(callsWhenHidden + 1), {
+      timeout: HIDDEN_TAB_INTERVAL_MS / 2
+    });
+    await waitFor(() => expect(checkSpy.mock.calls.length).toBeGreaterThanOrEqual(callsWhenHidden + 3), {
+      timeout: HIDDEN_TAB_INTERVAL_MS * 4
+    });
   }
 );
 
 export const ReopenedWhileRunning = meta.story({
   // No intervalMs: the page renders the view with the production interval.
   args: { initial: viewWith({ status: ExtractionViewStatus.running }) },
-  beforeEach: () => {
-    answerChecksWith([
+  beforeEach: (context) => {
+    answerChecksWith(context, [
       json(viewWith({ status: ExtractionViewStatus.running })),
       json(viewWith({ status: ExtractionViewStatus.completed }))
     ]);
@@ -561,17 +608,12 @@ export const ReopenedWhileRunning = meta.story({
 });
 
 ReopenedWhileRunning.test(
-  "Resumes checks every 3 s from the server-rendered status and shows the change (AC27, AC21)",
+  "Shows the server-rendered status, then the change the checks find (AC27, AC21)",
   async ({ canvas }) => {
-    const start = performance.now();
     await expect(canvas.getByText("Reading document", { selector: "h2" })).toBeVisible();
 
+    // The 3 s default interval itself is proven with fake timers in extraction-poller.test.ts.
     await expect(await canvas.findByText("The document has been read", undefined, { timeout: 8000 })).toBeVisible();
-    const elapsed = performance.now() - start;
-
-    await expect(fetchMock).toHaveBeenCalledTimes(2);
-    // Two checks 3 s apart, the first 3 s after the view mounted (slightly before this test started).
-    await expect(elapsed).toBeGreaterThanOrEqual(5500);
-    await expect(elapsed).toBeLessThan(7500);
+    await expect(checkSpy).toHaveBeenCalledTimes(2);
   }
 );

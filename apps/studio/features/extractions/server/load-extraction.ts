@@ -9,10 +9,16 @@ import { createLogger } from "~/lib/logger";
 
 const log = createLogger({ module: "extractions-load-extraction" });
 
+export const ExtractionResultStatus = {
+  found: "found",
+  notFound: "not-found",
+  unreachable: "unreachable"
+} as const;
+
 export type ExtractionResult =
-  | { status: "found"; extraction: ExtractionView }
-  | { status: "not-found" }
-  | { status: "unreachable" };
+  | { status: typeof ExtractionResultStatus.found; extraction: ExtractionView }
+  | { status: typeof ExtractionResultStatus.notFound }
+  | { status: typeof ExtractionResultStatus.unreachable };
 
 const idSchema = z.uuid();
 
@@ -24,7 +30,7 @@ const idSchema = z.uuid();
  */
 export const loadExtraction = React.cache(async function loadExtraction(id: string): Promise<ExtractionResult> {
   if (!idSchema.safeParse(id).success) {
-    return { status: "not-found" };
+    return { status: ExtractionResultStatus.notFound };
   }
   try {
     const response = await getExtraction(id, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
@@ -32,21 +38,21 @@ export const loadExtraction = React.cache(async function loadExtraction(id: stri
     if (response.status === 200) {
       const parsed = extractionViewSchema.safeParse(response.data);
       if (parsed.success) {
-        return { extraction: parsed.data, status: "found" };
+        return { extraction: parsed.data, status: ExtractionResultStatus.found };
       }
       log.withMetadata({ extractionId: id }).warn("Extraction answer has an unexpected shape");
-      return { status: "unreachable" };
+      return { status: ExtractionResultStatus.unreachable };
     }
     /** The documented statuses are 404 and 422, but a proxy or a crash can answer anything; read it as a plain answer. */
     const answer: { status: number } = response;
     if (answer.status === 404 || answer.status === 422) {
       log.withMetadata({ extractionId: id, statusCode: answer.status }).warn("Extraction not found");
-      return { status: "not-found" };
+      return { status: ExtractionResultStatus.notFound };
     }
     log.withMetadata({ extractionId: id, statusCode: answer.status }).warn("Extraction request refused");
-    return { status: "unreachable" };
+    return { status: ExtractionResultStatus.unreachable };
   } catch (error) {
     log.withError(error).withMetadata({ extractionId: id }).warn("Extraction request failed");
-    return { status: "unreachable" };
+    return { status: ExtractionResultStatus.unreachable };
   }
 });

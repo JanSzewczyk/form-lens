@@ -5,11 +5,17 @@ import {
   FINAL_STATUSES
 } from "~/features/extractions/schemas/extraction";
 
+export const ExtractionPollUpdateKind = {
+  found: "found",
+  notFound: "not-found",
+  unreachable: "unreachable"
+} as const;
+
 /** What a check found out; `unreachable` stays until the next check that reaches the API. */
 export type ExtractionPollUpdate =
-  | { kind: "found"; extraction: ExtractionView }
-  | { kind: "not-found" }
-  | { kind: "unreachable" };
+  | { kind: typeof ExtractionPollUpdateKind.found; extraction: ExtractionView }
+  | { kind: typeof ExtractionPollUpdateKind.notFound }
+  | { kind: typeof ExtractionPollUpdateKind.unreachable };
 
 /** The part of `document` the poller needs, so a test can hand it a plain `EventTarget`. */
 type VisibilitySource = Pick<Document, "hidden" | "addEventListener" | "removeEventListener">;
@@ -17,37 +23,41 @@ type VisibilitySource = Pick<Document, "hidden" | "addEventListener" | "removeEv
 type ExtractionPollerOptions = {
   url: string;
   initialStatus: ExtractionViewStatus;
-  intervalMs: number;
+  /** Time between checks; 3 s unless a story or test needs another. */
+  intervalMs?: number;
   /** Only tests pass one; the browser's `fetch` otherwise. */
   fetchImpl?: typeof fetch;
   visibility: VisibilitySource;
   onUpdate(update: ExtractionPollUpdate): void;
 };
 
+const POLL_INTERVAL_MS = 3000;
 const REQUEST_TIMEOUT_MS = 10_000;
 
 async function check(url: string, fetchImpl: typeof fetch, signal: AbortSignal): Promise<ExtractionPollUpdate> {
   const response = await fetchImpl(url, { cache: "no-store", signal });
   if (response.status === 404) {
-    return { kind: "not-found" };
+    return { kind: ExtractionPollUpdateKind.notFound };
   }
   if (!response.ok) {
-    return { kind: "unreachable" };
+    return { kind: ExtractionPollUpdateKind.unreachable };
   }
   const parsed = extractionViewSchema.safeParse(await response.json());
-  return parsed.success ? { extraction: parsed.data, kind: "found" } : { kind: "unreachable" };
+  return parsed.success
+    ? { extraction: parsed.data, kind: ExtractionPollUpdateKind.found }
+    : { kind: ExtractionPollUpdateKind.unreachable };
 }
 
 /**
- * Asks the Studio route for the extraction every `intervalMs`, one request at a time: the next check is scheduled only
- * after the previous one answered. It never starts for a final status, stops at the first final status or 404, sends
- * nothing while the tab is hidden and checks once at once when the tab is visible again. A failed request counts as
- * "unreachable" and the checks go on. Returns `stop`, which also aborts the request in flight.
+ * Asks the Studio route for the extraction every `intervalMs` (3 s by default), one request at a time: the next check
+ * is scheduled only after the previous one answered. It never starts for a final status, stops at the first final
+ * status or 404, sends nothing while the tab is hidden and checks once at once when the tab is visible again. A failed
+ * request counts as "unreachable" and the checks go on. Returns `stop`, which also aborts the request in flight.
  */
 export function startExtractionPoller({
   url,
   initialStatus,
-  intervalMs,
+  intervalMs = POLL_INTERVAL_MS,
   fetchImpl = fetch,
   visibility,
   onUpdate
@@ -85,7 +95,7 @@ export function startExtractionPoller({
         AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)])
       );
     } catch {
-      update = { kind: "unreachable" };
+      update = { kind: ExtractionPollUpdateKind.unreachable };
     }
     /** A check that was aborted (the tab came back, or the page left) is not the newest; its answer is dropped. */
     if (inFlight !== controller || isStopped) {
@@ -94,7 +104,8 @@ export function startExtractionPoller({
     inFlight = undefined;
     onUpdate(update);
     const isFinal =
-      update.kind === "not-found" || (update.kind === "found" && FINAL_STATUSES.includes(update.extraction.status));
+      update.kind === ExtractionPollUpdateKind.notFound ||
+      (update.kind === ExtractionPollUpdateKind.found && FINAL_STATUSES.includes(update.extraction.status));
     if (isFinal) {
       stop();
       return;

@@ -7,7 +7,7 @@ import { apiUrl, HttpResponse, http, problem, server } from "~/tests/unit/msw/se
 
 vi.mock("~/lib/logger", async () => (await import("~/tests/unit/mock-logger")).loggerModule);
 
-import { loadExtraction } from "./load-extraction";
+import { ExtractionResultStatus, loadExtraction } from "./load-extraction";
 
 describe("loadExtraction", () => {
   beforeEach(() => {
@@ -34,7 +34,7 @@ describe("loadExtraction", () => {
         template_id: extraction.template_id,
         template_name: "VAT invoice"
       },
-      status: "found"
+      status: ExtractionResultStatus.found
     });
   });
 
@@ -44,35 +44,45 @@ describe("loadExtraction", () => {
 
     const result = await loadExtraction(extraction.id);
 
-    expect(result.status === "found" ? result.extraction.status : null).toBe(ExtractionViewStatus.cancelled);
+    expect(result.status === ExtractionResultStatus.found ? result.extraction.status : null).toBe(
+      ExtractionViewStatus.cancelled
+    );
   });
 
   it("reports a 404, which is also how the API answers an expired result, as not found (AC28)", async () => {
     server.use(http.get(apiUrl("/v1/extractions/:id"), () => problem(404, { title: "Extraction not found" })));
 
-    await expect(loadExtraction("11111111-1111-4111-8111-111111111111")).resolves.toEqual({ status: "not-found" });
+    await expect(loadExtraction("11111111-1111-4111-8111-111111111111")).resolves.toEqual({
+      status: ExtractionResultStatus.notFound
+    });
   });
 
   it("reports an id that is not a UUID as not found without asking the API", async () => {
     // No handler: a request would fail the test (unhandled request).
-    await expect(loadExtraction("../templates")).resolves.toEqual({ status: "not-found" });
+    await expect(loadExtraction("../templates")).resolves.toEqual({ status: ExtractionResultStatus.notFound });
   });
 
   it("reports another status as unreachable", async () => {
     server.use(http.get(apiUrl("/v1/extractions/:id"), () => problem(503, { title: "Service not ready" })));
 
-    await expect(loadExtraction("22222222-2222-4222-8222-222222222222")).resolves.toEqual({ status: "unreachable" });
+    await expect(loadExtraction("22222222-2222-4222-8222-222222222222")).resolves.toEqual({
+      status: ExtractionResultStatus.unreachable
+    });
   });
 
   it("reports an answer of an unexpected shape as unreachable", async () => {
     server.use(http.get(apiUrl("/v1/extractions/:id"), () => HttpResponse.json({ id: 1 })));
 
-    await expect(loadExtraction("33333333-3333-4333-8333-333333333333")).resolves.toEqual({ status: "unreachable" });
+    await expect(loadExtraction("33333333-3333-4333-8333-333333333333")).resolves.toEqual({
+      status: ExtractionResultStatus.unreachable
+    });
   });
 
   it("reports an unreachable API as unreachable instead of throwing", async () => {
     server.use(http.get(apiUrl("/v1/extractions/:id"), () => HttpResponse.error()));
 
-    await expect(loadExtraction("44444444-4444-4444-8444-444444444444")).resolves.toEqual({ status: "unreachable" });
+    await expect(loadExtraction("44444444-4444-4444-8444-444444444444")).resolves.toEqual({
+      status: ExtractionResultStatus.unreachable
+    });
   });
 });

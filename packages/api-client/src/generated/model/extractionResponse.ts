@@ -11,6 +11,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ExtractionErrorResponse } from './extractionErrorResponse';
+import type { ExtractionFieldResponse } from './extractionFieldResponse';
 import type { ExtractionResponseResult } from './extractionResponseResult';
 import type { ExtractionStatus } from './extractionStatus';
 
@@ -27,7 +28,11 @@ export interface ExtractionResponse {
   created_at: string;
   /** Present when `status` is `failed`. */
   error?: ExtractionErrorResponse | null;
-  /** When the extraction ended (UTC). The result is kept for a limited time after this. */
+  /** The fields of the template as they were when the document was submitted, in template order; a later edit or delete of the template does not change them. */
+  fields: ExtractionFieldResponse[];
+  /** The name the client gave the uploaded file, without any path, at most 255 characters. `null` when it gave none or the extraction was submitted before file names were kept. */
+  filename: string | null;
+  /** When the extraction ended or was cancelled (UTC). The result is kept for a limited time after this. */
   finished_at?: string | null;
   /** Identifier of the extraction. */
   id: string;
@@ -37,10 +42,12 @@ export interface ExtractionResponse {
   result?: ExtractionResponseResult;
   /** When the worker took the job (UTC); `null` while it waits. */
   started_at?: string | null;
-  /** `pending` waits for the worker, `running` is being read, `completed` has a `result`, `failed` has an `error`. */
+  /** `pending` waits for the worker, `running` is being read, `completed` has a `result`, `failed` has an `error`, `cancelled` was stopped by a client and never gets a result. */
   status: ExtractionStatus;
   /** The template the document is read against. */
   template_id: string;
+  /** The name of the template as it was when the document was submitted. */
+  template_name: string;
   /** The version of the template that was copied when the document was submitted; a later edit does not change this extraction. */
   template_version: number;
 }
